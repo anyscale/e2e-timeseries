@@ -89,12 +89,11 @@ if args.use_gpu and args.use_multi_gpu:
     args.device_ids = [int(id_) for id_ in device_ids]
     args.gpu = args.device_ids[0]
 
-print('Args in experiment:')
-print(args)
-
 Exp = Exp_Main
 
 if __name__ == "__main__":
+    print('Args in experiment:')
+    print(args)
     if args.is_training:
         for ii in range(args.itr):
             # setting record of experiments
