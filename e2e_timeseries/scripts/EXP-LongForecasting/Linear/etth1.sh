@@ -9,7 +9,7 @@ fi
 seq_len=336
 model_name=DLinear
 
-python -u run_longExp.py \
+python run_longExp.py \
   --is_training 1 \
   --root_path ./dataset/ \
   --data_path ETTh1.csv \
@@ -21,7 +21,7 @@ python -u run_longExp.py \
   --pred_len 96 \
   --enc_in 7 \
   --des 'Exp' \
-  --itr 1 --batch_size 32 --learning_rate 0.005 >logs/LongForecasting/$model_name'_'Etth1_$seq_len'_'96.log
+  --itr 1 --batch_size 32 --learning_rate 0.005 #>logs/LongForecasting/$model_name'_'Etth1_$seq_len'_'96.log
 
 # python -u run_longExp.py \
 #   --is_training 1 \
