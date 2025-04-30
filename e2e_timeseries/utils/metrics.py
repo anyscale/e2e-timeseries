@@ -9,7 +9,7 @@ def CORR(pred, true):
     u = ((true - true.mean(0)) * (pred - pred.mean(0))).sum(0)
     d = np.sqrt(((true - true.mean(0)) ** 2 * (pred - pred.mean(0)) ** 2).sum(0))
     d += 1e-12
-    return 0.01*(u / d).mean(-1)
+    return 0.01 * (u / d).mean(-1)
 
 
 def MAE(pred, true):
