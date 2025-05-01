@@ -1,4 +1,5 @@
 import os
+import tempfile
 
 # Enable Ray Train V2
 os.environ["RAY_TRAIN_V2_ENABLED"] = "1"
@@ -17,12 +18,12 @@ from torch import optim
 import ray
 from ray import train
 from ray.train import ScalingConfig, Checkpoint, CheckpointConfig, RunConfig
-from ray.train.torch import TorchTrainer, TorchConfig
+from ray.train.torch import TorchTrainer
 
 from data_provider.data_factory import data_provider
 from models import DLinear, NLinear
 from utils.metrics import metric
-from utils.tools import EarlyStopping, adjust_learning_rate
+from utils.tools import adjust_learning_rate
 
 warnings.filterwarnings("ignore")
 
@@ -70,10 +71,10 @@ def train_loop_per_worker(config: dict):
         # test_data, test_loader = data_provider(args, flag="test") # Test data usually loaded separately
 
     # Prepare dataloader for distributed training
-    train_loader = train.torch.prepare_dataloader(train_loader)
+    train_loader = train.torch.prepare_data_loader(train_loader)
     if not args.train_only:
-        vali_loader = train.torch.prepare_dataloader(vali_loader)
-        # test_loader = train.torch.prepare_dataloader(test_loader)
+        vali_loader = train.torch.prepare_data_loader(vali_loader)
+        # test_loader = train.torch.prepare_data_loader(test_loader)
 
     # === Optimizer and Criterion ===
     model_optim = optim.Adam(model.parameters(), lr=args.learning_rate)
@@ -105,7 +106,6 @@ def train_loop_per_worker(config: dict):
             batch_x_mark = batch_x_mark.float().to(device)
             batch_y_mark = batch_y_mark.float().to(device)
 
-            # Simplified decoder input logic for linear models
             dec_inp = torch.zeros_like(batch_y[:, -args.pred_len:, :]).float()
             dec_inp = torch.cat([batch_y[:, :args.label_len, :], dec_inp], dim=1).float().to(device)
 
@@ -195,20 +195,28 @@ def train_loop_per_worker(config: dict):
             # Average validation loss for the epoch
             epoch_vali_loss = np.average(total_vali_loss)
             results_dict["vali_loss"] = epoch_vali_loss
+            # FIXME: calculate other metrics like MAE, RMSE, etc.
             print(f"Epoch {epoch+1}: Train Loss: {epoch_train_loss:.7f}, Vali Loss: {epoch_vali_loss:.7f}")
 
 
         # === Reporting and Checkpointing ===
         # Report metrics and potentially save checkpoint
         # Checkpoint saving frequency can be controlled by RunConfig
-        checkpoint_dict = {
-            "epoch": epoch,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": model_optim.state_dict(),
-        }
-        checkpoint = Checkpoint.from_dict(checkpoint_dict)
-
-        train.report(metrics=results_dict, checkpoint=checkpoint)
+        if train.get_context().get_world_rank() == 0:
+            with tempfile.TemporaryDirectory() as temp_checkpoint_dir:
+                torch.save(
+                    {
+                        "epoch": epoch,
+                        "model_state_dict": model.state_dict(),
+                        "optimizer_state_dict": model_optim.state_dict(),
+                    },
+                    os.path.join(temp_checkpoint_dir, "checkpoint.pt"),
+                )
+                checkpoint = Checkpoint.from_directory(temp_checkpoint_dir)
+                train.report(metrics=results_dict, checkpoint=checkpoint)
+        else:
+            train.report(metrics=results_dict, checkpoint=None)
+            
 
         # Adjust learning rate (ensure adjust_learning_rate is compatible)
         adjust_learning_rate(model_optim, epoch + 1, args)
@@ -227,8 +235,8 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, default="DLinear", help="model name, options: [DLinear, NLinear]") # Adjusted default
 
     # data loader
-    parser.add_argument("--data", type=str, default="ETTm1", help="dataset type")
-    parser.add_argument("--root_path", type=str, default="./data/ETT/", help="root path of the data file")
+    parser.add_argument("--data", type=str, default="ETTh1", help="dataset type")
+    parser.add_argument("--root_path", type=str, default="./e2e_timeseries/dataset/", help="root path of the data file")
     parser.add_argument("--data_path", type=str, default="ETTh1.csv", help="data file")
     parser.add_argument("--features", type=str, default="M", help="forecasting task, options:[M, S, MS]")
     parser.add_argument("--target", type=str, default="OT", help="target feature in S or MS task")
@@ -245,7 +253,7 @@ if __name__ == "__main__":
     parser.add_argument("--enc_in", type=int, default=7, help="encoder input size / number of channels")
     parser.add_argument("--c_out", type=int, default=7, help="output size") # Needed by models
 
-    # Non-Linear model args (keep if needed, else remove)
+    # FIXME Non-Linear model args (keep if needed, else remove)
     # parser.add_argument('--dec_in', type=int, default=7, help='decoder input size')
     # parser.add_argument('--d_model', type=int, default=512, help='dimension of model')
     # parser.add_argument('--n_heads', type=int, default=8, help='num of heads')
@@ -256,7 +264,7 @@ if __name__ == "__main__":
     # parser.add_argument('--factor', type=int, default=1, help='attn factor')
     # parser.add_argument('--distil', action='store_false', help='whether to use distilling in encoder', default=True)
     # parser.add_argument('--dropout', type=float, default=0.05, help='dropout')
-    # parser.add_argument('--embed', type=str, default='timeF', help='time features encoding')
+    parser.add_argument('--embed', type=str, default='timeF', help='time features encoding')
     # parser.add_argument('--activation', type=str, default='gelu', help='activation')
     # parser.add_argument('--output_attention', action='store_true', help='whether to output attention in encoder')
 
@@ -282,6 +290,11 @@ if __name__ == "__main__":
 
 
     args = parser.parse_args()
+
+    # Ensure absolute paths for each of the paths above
+    args.root_path = os.path.abspath(args.root_path)
+    args.data_path = os.path.abspath(os.path.join(args.root_path, args.data_path))
+    args.checkpoints = os.path.abspath(args.checkpoints)
 
     # === Ray Train Setup ===
     # ray.init(address="auto") # Or specify address if connecting to existing cluster

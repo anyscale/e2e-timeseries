@@ -179,3 +179,4 @@ cython_debug/
 *.pdf
 *.pth
 result.txt
+ray_checkpoints/
