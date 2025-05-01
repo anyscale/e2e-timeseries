@@ -165,7 +165,7 @@ def train_loop_per_worker(config: dict):
         adjust_learning_rate(model_optim, epoch + 1, args)
 
 
-if __name__ == "__main__":
+def parse_args():
     parser = argparse.ArgumentParser(description="Ray Train Script for Time Series Forecasting with DLinear on ETTh1")
 
     # basic config
@@ -173,6 +173,7 @@ if __name__ == "__main__":
 
     # data loader args
     parser.add_argument("--root_path", type=str, default="./e2e_timeseries/dataset/", help="root path of the data file")
+    parser.add_argument("--num_data_workers", type=int, default=5, help="Number of workers for PyTorch DataLoader")
     parser.add_argument("--features", type=str, default="M", help="forecasting task, options:[M, S, MS] (M -> 7 features for ETTh1)")
     parser.add_argument("--target", type=str, default="OT", help="target feature in S or MS task")
     parser.add_argument("--freq", type=str, default="h", help="freq for time features encoding (ETTh1 is hourly)")
@@ -191,7 +192,7 @@ if __name__ == "__main__":
     parser.add_argument('--embed', type=str, default='timeF', help='time features encoding')
 
     # optimization args
-    parser.add_argument("--num_workers", type=int, default=1, help="Number of Ray workers (suggest >= num GPUs if use_gpu)")
+    parser.add_argument("--num_replicas", type=int, default=1, help="Number of Ray Train model replicas")
     parser.add_argument("--train_epochs", type=int, default=10, help="train epochs")
     parser.add_argument("--batch_size", type=int, default=32, help="batch size of train input data")
     parser.add_argument("--patience", type=int, default=3, help="early stopping patience (Note: requires custom implementation or callback)")
@@ -223,11 +224,17 @@ if __name__ == "__main__":
     args.data_path = os.path.abspath(os.path.join(args.root_path, args.data_path))
     args.checkpoints = os.path.abspath(args.checkpoints)
 
+    return args
+
+
+if __name__ == "__main__":
+    args = parse_args()
+
     # === Ray Train Setup ===
     ray.init()
 
     scaling_config = ScalingConfig(
-        num_workers=args.num_workers,
+        num_workers=args.num_replicas,
         use_gpu=args.use_gpu,
         # resources_per_worker={"GPU": 1} if args.use_gpu else {}
     )
@@ -260,16 +267,10 @@ if __name__ == "__main__":
 
     # === Post-Training ===
     if result.best_checkpoints:
-        best_checkpoint_tuple = result.get_best_checkpoint(metric="vali_loss" if not args.train_only else "train_loss", mode="min")
-        if best_checkpoint_tuple:
-             print(best_checkpoint_tuple)
-             best_checkpoint, best_metrics = best_checkpoint_tuple
+        best_checkpoint = result.get_best_checkpoint(metric="vali_loss" if not args.train_only else "train_loss", mode="min")
+        if best_checkpoint:
              print(f"Best checkpoint found:")
              print(f"  Directory: {best_checkpoint.path}")
-             print(f"  Metrics: {best_metrics}")
-             # Example: Load best checkpoint and run evaluation
-             # best_checkpoint_path = best_checkpoint.path
-             # ... add logic here ...
         else:
             print("Could not retrieve the best checkpoint.")
     else:
