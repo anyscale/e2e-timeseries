@@ -10,6 +10,7 @@ random.seed(fix_seed)
 torch.manual_seed(fix_seed)
 np.random.seed(fix_seed)
 
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Autoformer & Transformer family for Time Series Forecasting")
 
@@ -44,7 +45,6 @@ def parse_args():
     parser.add_argument("--seq_len", type=int, default=96, help="input sequence length")
     parser.add_argument("--label_len", type=int, default=48, help="start token length")
     parser.add_argument("--pred_len", type=int, default=96, help="prediction sequence length")
-
 
     # DLinear
     parser.add_argument("--individual", action="store_true", default=False, help="DLinear: a linear layer for each variate(channel) individually")
@@ -98,6 +98,7 @@ def parse_args():
     args = parser.parse_args()
     return args
 
+
 if __name__ == "__main__":
     args = parse_args()
 
@@ -108,7 +109,7 @@ if __name__ == "__main__":
         device_ids = args.devices.split(",")
         args.device_ids = [int(id_) for id_ in device_ids]
         args.gpu = args.device_ids[0]
-    
+
     print("Args in experiment:")
     print(args)
 
