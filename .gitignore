@@ -176,3 +176,7 @@ cython_debug/
 .DS_Store
 *.csv
 checkpoint.pth
+*.pdf
+*.txt
+*.prof
+*.npy
