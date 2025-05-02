@@ -13,16 +13,16 @@ np.random.seed(fix_seed)
 parser = argparse.ArgumentParser(description="Autoformer & Transformer family for Time Series Forecasting")
 
 # basic config
-parser.add_argument("--is_training", type=int, required=True, default=1, help="status")
+parser.add_argument("--is_training", type=int, default=True, help="status")
 parser.add_argument(
     "--train_only", type=bool, required=False, default=False, help="perform training on full input dataset without validation and testing"
 )
-parser.add_argument("--model_id", type=str, required=True, default="test", help="model id")
-parser.add_argument("--model", type=str, required=True, default="Autoformer", help="model name, options: [Autoformer, Informer, Transformer]")
+parser.add_argument("--model_id", type=str, default="test", help="model id")
+parser.add_argument("--model", type=str, default="DLinear", help="model name")
 
 # data loader
-parser.add_argument("--data", type=str, required=True, default="ETTm1", help="dataset type")
-parser.add_argument("--root_path", type=str, default="./data/ETT/", help="root path of the data file")
+parser.add_argument("--data", type=str, default="ETTh1", help="dataset type")
+parser.add_argument("--root_path", type=str, default="./data/", help="root path of the data file")
 parser.add_argument("--data_path", type=str, default="ETTh1.csv", help="data file")
 parser.add_argument(
     "--features",
