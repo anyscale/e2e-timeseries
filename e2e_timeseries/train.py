@@ -81,6 +81,10 @@ if __name__ == "__main__":
         args.device_ids = [int(id_) for id_ in device_ids]
         args.gpu = args.device_ids[0]
 
+    if args.smoke_test:
+        args.train_epochs = 1
+        args.num_workers = 1
+
     print("Args in experiment:")
     print(args)
 
