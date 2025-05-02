@@ -69,8 +69,6 @@ def parse_args():
     parser.add_argument("--gpu", type=int, default=0, help="gpu")
     parser.add_argument("--use_multi_gpu", action="store_true", help="use multiple gpus", default=False)
     parser.add_argument("--devices", type=str, default="0,1,2,3", help="device ids of multile gpus")
-    parser.add_argument("--test_flop", action="store_true", default=False, help="See utils/tools for usage (likely remove if not needed)")
-    parser.add_argument("--do_predict", action="store_true", help="whether to predict unseen future data")
 
     args = parser.parse_args()
     return args
@@ -116,31 +114,4 @@ if __name__ == "__main__":
                 print(">>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<".format(setting))
                 exp.test(setting)
 
-            if args.do_predict:
-                print(">>>>>>>predicting : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<".format(setting))
-                exp.predict(setting, True)
-
             torch.cuda.empty_cache()
-    else:
-        ii = 0
-        setting = "{}_{}_{}_ft{}_sl{}_pl{}_ind{}_{}_{}".format(
-            args.model_id,
-            args.model,
-            args.data,
-            args.features,
-            args.seq_len,
-            args.pred_len,
-            args.individual,
-            args.des,
-            ii,
-        )
-
-        exp = Exp(args)
-
-        if args.do_predict:
-            print(">>>>>>>predicting : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<".format(setting))
-            exp.predict(setting, True)
-        else:
-            print(">>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<".format(setting))
-            exp.test(setting, test=1)
-        torch.cuda.empty_cache()
