@@ -9,7 +9,11 @@ def CORR(pred, true):
     u = ((true - true.mean(0)) * (pred - pred.mean(0))).sum(0)
     d = np.sqrt(((true - true.mean(0)) ** 2 * (pred - pred.mean(0)) ** 2).sum(0))
     d += 1e-12
-    return 0.01 * (u / d).mean(-1)
+    # Calculate element-wise correlation, then take the overall mean
+    corr_values = u / d
+    # Ensure we handle potential NaN/inf if d was zero despite epsilon, although unlikely
+    corr_values = np.nan_to_num(corr_values)
+    return 0.01 * corr_values.mean()  # Take the mean of all elements
 
 
 def MAE(pred, true):
@@ -25,11 +29,11 @@ def RMSE(pred, true):
 
 
 def MAPE(pred, true):
-    return np.mean(np.abs((pred - true) / true))
+    return np.mean(np.abs((pred - true) / (true + 1e-8)))
 
 
 def MSPE(pred, true):
-    return np.mean(np.square((pred - true) / true))
+    return np.mean(np.square((pred - true) / (true + 1e-8)))
 
 
 def metric(pred, true):
