@@ -52,9 +52,8 @@ class Exp_Main(Exp_Basic):
                 else:
                     outputs = self.model(batch_x)
 
-                f_dim = 0
-                outputs = outputs[:, -self.args.pred_len :, f_dim:]
-                batch_y = batch_y[:, -self.args.pred_len :, f_dim:].to(self.device)
+                outputs = outputs[:, -self.args.pred_len :, 0:]
+                batch_y = batch_y[:, -self.args.pred_len :, 0:].to(self.device)
 
                 pred = outputs.detach().cpu()
                 true = batch_y.detach().cpu()
@@ -100,27 +99,25 @@ class Exp_Main(Exp_Basic):
 
                 batch_y = batch_y.float().to(self.device)
 
-                f_dim = 0
-
                 if self.args.use_amp:
                     with torch.amp.autocast("cuda"):
                         outputs = self.model(batch_x)
-                        outputs = outputs[:, -self.args.pred_len :, f_dim:]
-                        batch_y = batch_y[:, -self.args.pred_len :, f_dim:].to(self.device)
+                        outputs = outputs[:, -self.args.pred_len :, 0:]
+                        batch_y = batch_y[:, -self.args.pred_len :, 0:].to(self.device)
                         loss = criterion(outputs, batch_y)
-                        train_loss.append(loss.item())
                 else:
                     outputs = self.model(batch_x)
-                    outputs = outputs[:, -self.args.pred_len :, f_dim:]
-                    batch_y = batch_y[:, -self.args.pred_len :, f_dim:].to(self.device)
+                    outputs = outputs[:, -self.args.pred_len :, 0:]
+                    batch_y = batch_y[:, -self.args.pred_len :, 0:].to(self.device)
                     loss = criterion(outputs, batch_y)
-                    train_loss.append(loss.item())
+
+                train_loss.append(loss.item())
 
                 if (i + 1) % 100 == 0:
-                    print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
+                    print(f"\titers: {i + 1}, epoch: {epoch + 1} | loss: {loss.item():.7f}")
                     speed = (time.time() - time_now) / iter_count
                     left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
-                    print("\tspeed: {:.4f}s/iter; left time: {:.4f}s".format(speed, left_time))
+                    print(f"\tspeed: {speed:.4f}s/iter; left time: {left_time:.4f}s")
                     iter_count = 0
                     time_now = time.time()
 
@@ -132,20 +129,18 @@ class Exp_Main(Exp_Basic):
                     loss.backward()
                     model_optim.step()
 
-            print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+            print(f"Epoch: {epoch + 1} cost time: {time.time() - epoch_time}")
             train_loss = np.average(train_loss)
             if not self.args.train_only:
                 vali_loss = self.vali(vali_data, vali_loader, criterion)
                 test_loss = self.vali(test_data, test_loader, criterion)
 
                 print(
-                    "Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
-                        epoch + 1, train_steps, train_loss, vali_loss, test_loss
-                    )
+                    f"Epoch: {epoch + 1}, Steps: {train_steps} | Train Loss: {train_loss:.7f} Vali Loss: {vali_loss:.7f} Test Loss: {test_loss:.7f}"
                 )
                 early_stopping(vali_loss, self.model, path)
             else:
-                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f}".format(epoch + 1, train_steps, train_loss))
+                print(f"Epoch: {epoch + 1}, Steps: {train_steps} | Train Loss: {train_loss:.7f}")
                 early_stopping(train_loss, self.model, path)
 
             if early_stopping.early_stop:
@@ -167,7 +162,7 @@ class Exp_Main(Exp_Basic):
 
         if test:
             print("loading model")
-            model_path = os.path.join("./checkpoints/" + setting, "checkpoint.pth")
+            model_path = os.path.join(self.args.checkpoints, setting, "checkpoint.pth")
             if os.path.exists(model_path):
                 self.model.load_state_dict(torch.load(model_path))
             else:
@@ -193,9 +188,8 @@ class Exp_Main(Exp_Basic):
                 else:
                     outputs = self.model(batch_x)
 
-                f_dim = 0
-                outputs = outputs[:, -self.args.pred_len :, f_dim:]
-                batch_y = batch_y[:, -self.args.pred_len :, f_dim:].to(self.device)
+                outputs = outputs[:, -self.args.pred_len :, 0:]
+                batch_y = batch_y[:, -self.args.pred_len :, 0:].to(self.device)
                 outputs = outputs.detach().cpu().numpy()
                 batch_y = batch_y.detach().cpu().numpy()
 
@@ -234,18 +228,16 @@ class Exp_Main(Exp_Basic):
             os.makedirs(folder_path)
 
         mae, mse, rmse, mape, mspe, rse, corr = metric(preds, trues)
-        print("mse:{}, mae:{}".format(mse, mae))
+        print(f"mse:{mse}, mae:{mae}")
         try:
-            f = open("result.txt", "a")
-            f.write(setting + "  \n")
-            f.write("mse:{}, mae:{}, rse:{}, corr:{}".format(mse, mae, rse, corr))
-            f.write("\n")
-            f.write("\n")
-            f.close()
+            with open("result.txt", "a") as f:
+                f.write(f"{setting}  \n")
+                f.write(f"mse:{mse}, mae:{mae}, rse:{rse}, corr:{corr}")
+                f.write("\n\n")
         except IOError as e:
             print(f"Error writing to result.txt: {e}")
 
-        np.save(folder_path + "pred.npy", preds)
+        np.save(os.path.join(folder_path, "pred.npy"), preds)
         np.save(folder_path + "true.npy", trues)
         np.save(folder_path + "x.npy", inputx)
         return

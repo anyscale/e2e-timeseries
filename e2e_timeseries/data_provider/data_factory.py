@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader
 
 def data_provider(args, flag):
     timeenc = 0 if args.embed != "timeF" else 1
+    smoke_test = getattr(args, "smoke_test", False)
 
     if flag == "test":
         shuffle_flag = False
@@ -22,6 +23,7 @@ def data_provider(args, flag):
         size=[args.seq_len, args.label_len, args.pred_len],
         timeenc=timeenc,
         freq=freq,
+        smoke_test=smoke_test,
     )
     print(flag, len(data_set))
     data_loader = DataLoader(data_set, batch_size=batch_size, shuffle=shuffle_flag, num_workers=args.num_workers, drop_last=drop_last)

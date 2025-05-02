@@ -19,6 +19,7 @@ def parse_args():
     parser.add_argument(
         "--train_only", type=bool, required=False, default=False, help="perform training on full input dataset without validation and testing"
     )
+    parser.add_argument("--smoke_test", action="store_true", default=False, help="Run on a small subset of data for quick testing")
     parser.add_argument("--model_id", type=str, default="test", help="model id")
     parser.add_argument("--model", type=str, default="DLinear", help="model name")
 

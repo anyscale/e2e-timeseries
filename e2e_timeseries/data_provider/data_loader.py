@@ -10,7 +10,7 @@ warnings.filterwarnings("ignore")
 
 
 class TimeSeriesDataset(Dataset):
-    def __init__(self, root_path, flag="train", size=None, timeenc=0, freq="h"):
+    def __init__(self, root_path, flag="train", size=None, timeenc=0, freq="h", smoke_test=False):
         # size [seq_len, label_len, pred_len]
         # info
         if size is None:
@@ -33,8 +33,10 @@ class TimeSeriesDataset(Dataset):
 
         self.timeenc = timeenc
         self.freq = freq
-
         self.root_path = root_path
+        # Store smoke_test flag
+        self.smoke_test = smoke_test
+
         self.__read_data__()
 
     def __read_data__(self):
@@ -67,6 +69,24 @@ class TimeSeriesDataset(Dataset):
         self.data_x = data[border1:border2]
         self.data_y = data[border1:border2]
         self.data_stamp = data_stamp
+
+        # Apply smoke test subsetting if enabled
+        if self.smoke_test:
+            print(f"Smoke test active for flag '{self.set_type}', reducing dataset size.")
+            # Calculate desired length for ~500 samples
+            target_len = 500 + self.seq_len + self.pred_len - 1
+            # Ensure we don't exceed original length
+            actual_len = min(target_len, len(self.data_x))
+
+            if actual_len < self.seq_len + self.pred_len:
+                warnings.warn(
+                    "Smoke test subsetting resulted in insufficient data for the required sequence and prediction lengths. Disabling subsetting for this split."
+                )
+            else:
+                print(f"Original length: {len(self.data_x)}, Reduced length: {actual_len}")
+                self.data_x = self.data_x[:actual_len]
+                self.data_y = self.data_y[:actual_len]
+                self.data_stamp = self.data_stamp[:actual_len]
 
     def __getitem__(self, index):
         s_begin = index
