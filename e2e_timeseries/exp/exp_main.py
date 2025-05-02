@@ -19,9 +19,6 @@ class Exp_Main(Exp_Basic):
     def __init__(self, args):
         super(Exp_Main, self).__init__(args)
         # Ensure result_path exists in args, provide a default if necessary
-        if not hasattr(self.args, "result_path"):
-            print("Warning: args.result_path not set, defaulting to './results'")
-            self.args.result_path = "./results"
 
     def _build_model(self):
         model = DLinear.Model(self.args).float()
