@@ -9,10 +9,8 @@ from utils.timefeatures import time_features
 warnings.filterwarnings("ignore")
 
 
-class Dataset_ETT_hour(Dataset):
-    def __init__(
-        self, root_path, flag="train", size=None, features="S", data_path="ETTh1.csv", target="OT", scale=True, timeenc=0, freq="h", train_only=False
-    ):
+class TimeSeriesDataset(Dataset):
+    def __init__(self, root_path, flag="train", size=None, timeenc=0, freq="h"):
         # size [seq_len, label_len, pred_len]
         # info
         if size is None:
@@ -28,14 +26,15 @@ class Dataset_ETT_hour(Dataset):
         type_map = {"train": 0, "val": 1, "test": 2}
         self.set_type = type_map[flag]
 
-        self.features = features
-        self.target = target
-        self.scale = scale
+        self.features = "S"
+        self.target = "OT"
+        self.scale = True
+        self.data_path = "ETTh1.csv"
+
         self.timeenc = timeenc
         self.freq = freq
 
         self.root_path = root_path
-        self.data_path = data_path
         self.__read_data__()
 
     def __read_data__(self):
@@ -47,18 +46,11 @@ class Dataset_ETT_hour(Dataset):
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
-        if self.features == "M" or self.features == "MS":
-            cols_data = df_raw.columns[1:]
-            df_data = df_raw[cols_data]
-        elif self.features == "S":
-            df_data = df_raw[[self.target]]
+        df_data = df_raw[[self.target]]
 
-        if self.scale:
-            train_data = df_data[border1s[0] : border2s[0]]
-            self.scaler.fit(train_data.values)
-            data = self.scaler.transform(df_data.values)
-        else:
-            data = df_data.values
+        train_data = df_data[border1s[0] : border2s[0]]
+        self.scaler.fit(train_data.values)
+        data = self.scaler.transform(df_data.values)
 
         df_stamp = df_raw[["date"]][border1:border2]
         df_stamp["date"] = pd.to_datetime(df_stamp.date)

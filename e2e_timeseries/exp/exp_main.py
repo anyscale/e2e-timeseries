@@ -3,7 +3,6 @@ import time
 import warnings
 
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
 from data_provider.data_factory import data_provider
@@ -11,7 +10,7 @@ from exp.exp_basic import Exp_Basic
 from models import DLinear
 from torch import optim
 from utils.metrics import metric
-from utils.tools import EarlyStopping, adjust_learning_rate, test_params_flop, visual
+from utils.tools import EarlyStopping, adjust_learning_rate, visual
 
 warnings.filterwarnings("ignore")
 
@@ -53,7 +52,7 @@ class Exp_Main(Exp_Basic):
                 else:
                     outputs = self.model(batch_x)
 
-                f_dim = -1 if self.args.features == "MS" else 0
+                f_dim = 0
                 outputs = outputs[:, -self.args.pred_len :, f_dim:]
                 batch_y = batch_y[:, -self.args.pred_len :, f_dim:].to(self.device)
 
@@ -101,19 +100,17 @@ class Exp_Main(Exp_Basic):
 
                 batch_y = batch_y.float().to(self.device)
 
+                f_dim = 0
+
                 if self.args.use_amp:
                     with torch.amp.autocast("cuda"):
                         outputs = self.model(batch_x)
-
-                        f_dim = -1 if self.args.features == "MS" else 0
                         outputs = outputs[:, -self.args.pred_len :, f_dim:]
                         batch_y = batch_y[:, -self.args.pred_len :, f_dim:].to(self.device)
                         loss = criterion(outputs, batch_y)
                         train_loss.append(loss.item())
                 else:
                     outputs = self.model(batch_x)
-
-                    f_dim = -1 if self.args.features == "MS" else 0
                     outputs = outputs[:, -self.args.pred_len :, f_dim:]
                     batch_y = batch_y[:, -self.args.pred_len :, f_dim:].to(self.device)
                     loss = criterion(outputs, batch_y)
@@ -196,7 +193,7 @@ class Exp_Main(Exp_Basic):
                 else:
                     outputs = self.model(batch_x)
 
-                f_dim = -1 if self.args.features == "MS" else 0
+                f_dim = 0
                 outputs = outputs[:, -self.args.pred_len :, f_dim:]
                 batch_y = batch_y[:, -self.args.pred_len :, f_dim:].to(self.device)
                 outputs = outputs.detach().cpu().numpy()
@@ -209,27 +206,24 @@ class Exp_Main(Exp_Basic):
                 trues.append(true)
                 inputx.append(batch_x.detach().cpu().numpy())
                 if i % 20 == 0:
-                    input = batch_x.detach().cpu().numpy()
-                    if (
-                        input.shape[0] > 0
-                        and true.shape[0] > 0
-                        and pred.shape[0] > 0
-                        and input.shape[2] > 0
-                        and true.shape[2] >= 0
-                        and pred.shape[2] >= 0
-                    ):
-                        feature_index_to_visualize = -1 if true.ndim > 2 else 0
-                        gt = np.concatenate((input[0, :, feature_index_to_visualize], true[0, :, feature_index_to_visualize]), axis=0)
-                        pd_vis = np.concatenate((input[0, :, feature_index_to_visualize], pred[0, :, feature_index_to_visualize]), axis=0)
-                        visual(gt, pd_vis, os.path.join(folder_path, str(i) + ".pdf"))
+                    input_vis = batch_x.detach().cpu().numpy()
+                    if input_vis.shape[0] > 0 and true.shape[0] > 0 and pred.shape[0] > 0:
+                        feature_index = 0
+                        if (
+                            input_vis.ndim > 2
+                            and input_vis.shape[2] > feature_index
+                            and true.ndim > 2
+                            and true.shape[2] > feature_index
+                            and pred.ndim > 2
+                            and pred.shape[2] > feature_index
+                        ):
+                            gt = np.concatenate((input_vis[0, :, feature_index], true[0, :, feature_index]), axis=0)
+                            pd_vis = np.concatenate((input_vis[0, :, feature_index], pred[0, :, feature_index]), axis=0)
+                            visual(gt, pd_vis, os.path.join(folder_path, str(i) + ".pdf"))
+                        else:
+                            print(f"Skipping visualization for batch {i}: Feature dimension mismatch or missing.")
                     else:
-                        print(f"Skipping visualization for batch {i} due to incompatible shapes.")
-
-        if self.args.test_flop:
-            if hasattr(self.model, "seq_len") and hasattr(self.model, "pred_len"):
-                test_params_flop((self.args.seq_len, self.args.enc_in))
-            else:
-                print("Skipping FLOP test: Model attributes not found.")
+                        print(f"Skipping visualization for batch {i} due to empty arrays.")
 
         preds = np.concatenate(preds, axis=0)
         trues = np.concatenate(trues, axis=0)
@@ -254,83 +248,4 @@ class Exp_Main(Exp_Basic):
         np.save(folder_path + "pred.npy", preds)
         np.save(folder_path + "true.npy", trues)
         np.save(folder_path + "x.npy", inputx)
-        return
-
-    def predict(self, setting, load=False):
-        pred_data, pred_loader = self._get_data(flag="pred")
-
-        if load:
-            path = os.path.join(self.args.checkpoints, setting)
-            best_model_path = path + "/" + "checkpoint.pth"
-            if os.path.exists(best_model_path):
-                self.model.load_state_dict(torch.load(best_model_path))
-            else:
-                print(f"Error: Model checkpoint not found at {best_model_path}. Cannot perform prediction.")
-                return
-
-        preds = []
-
-        self.model.eval()
-        with torch.no_grad():
-            for i, (batch_x, batch_y, _, _) in enumerate(pred_loader):
-                batch_x = batch_x.float().to(self.device)
-                batch_y = batch_y.float()
-
-                if self.args.use_amp:
-                    with torch.amp.autocast("cuda"):
-                        outputs = self.model(batch_x)
-                else:
-                    outputs = self.model(batch_x)
-
-                pred = outputs.detach().cpu().numpy()
-                preds.append(pred)
-
-        preds = np.array(preds)
-        if len(preds) > 0:
-            preds = np.concatenate(preds, axis=0)
-        else:
-            print("Warning: No predictions were generated.")
-            return
-
-        if pred_data and hasattr(pred_data, "scale") and pred_data.scale and hasattr(pred_data, "inverse_transform"):
-            preds = pred_data.inverse_transform(preds)
-        elif pred_data and hasattr(pred_data, "scale") and pred_data.scale:
-            print("Warning: Data is scaled but inverse_transform method not found or failed. Saving scaled predictions.")
-
-        folder_path = "./results/" + setting + "/"
-        if not os.path.exists(folder_path):
-            os.makedirs(folder_path)
-
-        np.save(folder_path + "real_prediction.npy", preds)
-
-        if pred_data and hasattr(pred_data, "future_dates") and hasattr(pred_data, "cols"):
-            try:
-                if preds.ndim >= 3 and preds.shape[0] > 0:
-                    first_pred_sample = preds[0]
-                    if len(pred_data.future_dates) == first_pred_sample.shape[0]:
-                        dates_col = np.transpose([pred_data.future_dates])
-                        df_data = np.append(dates_col, first_pred_sample, axis=1)
-                        if len(pred_data.cols) == first_pred_sample.shape[1]:
-                            df_cols = [pred_data.timeenc_col] + pred_data.cols if hasattr(pred_data, "timeenc_col") else ["date"] + pred_data.cols
-                            if len(df_cols) == df_data.shape[1]:
-                                pd.DataFrame(df_data, columns=df_cols).to_csv(folder_path + "real_prediction.csv", index=False)
-                            else:
-                                print(
-                                    f"Warning: Column mismatch for CSV saving. Expected {df_data.shape[1]} columns, got {len(df_cols)}. Saving NPY only."
-                                )
-                        else:
-                            print(
-                                f"Warning: Feature column count mismatch for CSV saving. Expected {first_pred_sample.shape[1]} features, got {len(pred_data.cols)}. Saving NPY only."
-                            )
-                    else:
-                        print(
-                            f"Warning: Mismatch between future_dates length ({len(pred_data.future_dates)}) and prediction length ({first_pred_sample.shape[0]}). Cannot save CSV."
-                        )
-                else:
-                    print("Warning: Prediction array has unexpected dimensions or is empty. Cannot save CSV.")
-            except Exception as e:
-                print(f"Error saving prediction CSV: {e}. Saving NPY file only.")
-        else:
-            print("Warning: Missing attributes (future_dates or cols) in pred_data. Cannot save CSV.")
-
         return
