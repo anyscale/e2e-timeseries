@@ -43,7 +43,7 @@ class Exp_Main(Exp_Basic):
         total_loss = []
         self.model.eval()
         with torch.no_grad():
-            for i, (batch_x, batch_y, _, _) in enumerate(vali_loader):
+            for i, (batch_x, batch_y) in enumerate(vali_loader):
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float()
 
@@ -94,7 +94,7 @@ class Exp_Main(Exp_Basic):
 
             self.model.train()
             epoch_time = time.time()
-            for i, (batch_x, batch_y, _, _) in enumerate(train_loader):
+            for i, (batch_x, batch_y) in enumerate(train_loader):
                 iter_count += 1
                 model_optim.zero_grad()
                 batch_x = batch_x.float().to(self.device)
@@ -217,7 +217,7 @@ class Exp_Main(Exp_Basic):
 
         self.model.eval()
         with torch.no_grad():
-            for i, (batch_x, batch_y, _, _) in enumerate(test_loader):
+            for i, (batch_x, batch_y) in enumerate(test_loader):
                 batch_x = batch_x.float().to(self.device)
                 batch_y = batch_y.float().to(self.device)  # Keep on device for potential loss calculation if needed later
 

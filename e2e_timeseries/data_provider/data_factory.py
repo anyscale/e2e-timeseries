@@ -3,26 +3,21 @@ from torch.utils.data import DataLoader
 
 
 def data_provider(args, flag):
-    timeenc = 0 if args.embed != "timeF" else 1
     smoke_test = getattr(args, "smoke_test", False)
 
     if flag == "test":
         shuffle_flag = False
         drop_last = False
         batch_size = args.batch_size
-        freq = args.freq
     else:
         shuffle_flag = True
         drop_last = True
         batch_size = args.batch_size
-        freq = args.freq
 
     data_set = TimeSeriesDataset(
         root_path=args.root_path,
         flag=flag,
         size=[args.seq_len, args.label_len, args.pred_len],
-        timeenc=timeenc,
-        freq=freq,
         smoke_test=smoke_test,
     )
     print(flag, len(data_set))
