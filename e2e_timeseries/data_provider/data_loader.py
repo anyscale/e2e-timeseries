@@ -39,9 +39,32 @@ class TimeSeriesDataset(Dataset):
     def __read_data__(self):
         self.scaler = StandardScaler()
         df_raw = pd.read_csv(os.path.join(self.root_path, self.data_path))
+        # Define time periods in hours
+        hours_per_day = 24
+        days_per_month = 30
 
-        border1s = [0, 12 * 30 * 24 - self.seq_len, 12 * 30 * 24 + 4 * 30 * 24 - self.seq_len]
-        border2s = [12 * 30 * 24, 12 * 30 * 24 + 4 * 30 * 24, 12 * 30 * 24 + 8 * 30 * 24]
+        # Define dataset splits in months
+        train_months = 12
+        val_months = 4
+        test_months = 4
+
+        # Calculate boundaries for each split in hours
+        train_hours = train_months * days_per_month * hours_per_day
+        val_hours = val_months * days_per_month * hours_per_day
+        test_hours = test_months * days_per_month * hours_per_day
+
+        # Define borders for train, validation and test sets
+        border1s = [
+            0,  # train start
+            train_hours - self.seq_len,  # val start
+            train_hours + val_hours - self.seq_len,  # test start
+        ]
+
+        border2s = [
+            train_hours,  # train end
+            train_hours + val_hours,  # val end
+            train_hours + val_hours + test_hours,  # test end
+        ]
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
