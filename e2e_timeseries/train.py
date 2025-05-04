@@ -49,10 +49,10 @@ def parse_args():
     parser.add_argument("--individual", action="store_true", default=False, help="DLinear: a linear layer for each variate(channel) individually")
 
     parser.add_argument("--num_workers", type=int, default=1, help="Ray Train num workers (data loading happens in train loop)")
-    parser.add_argument("--train_epochs", type=int, default=10, help="train epochs")
+    parser.add_argument("--epochs", type=int, default=10, help="train epochs")
     parser.add_argument("--batch_size", type=int, default=32, help="batch size of train input data")
     parser.add_argument("--patience", type=int, default=3, help="early stopping patience")
-    parser.add_argument("--learning_rate", type=float, default=0.0001, help="optimizer learning rate")
+    parser.add_argument("--lr", type=float, default=0.0001, help="optimizer learning rate")
     parser.add_argument("--loss", type=str, default="mse", help="loss function")
     parser.add_argument("--lradj", type=str, default="type1", help="adjust learning rate")
     parser.add_argument("--use_amp", action="store_true", help="use automatic mixed precision training", default=False)
@@ -90,7 +90,7 @@ if __name__ == "__main__":
     print("Args for Ray Train experiment:")
     print(args)
 
-    train_ds, train_scaler = data_provider(args, flag="train", return_scaler=True)
+    train_ds = data_provider(args, flag="train")
     val_ds = data_provider(args, flag="val")
     test_ds = data_provider(args, flag="test")
 
@@ -160,6 +160,8 @@ if __name__ == "__main__":
         if best_checkpoint_path:
             if test_ds:
                 print("\n>>> Starting testing using the best checkpoint...")
+                # TODO: add scaler
+                train_scaler = None
                 run_testing(args=args, test_checkpoint_path=best_checkpoint_path, test_ds=test_ds, scaler=train_scaler)
             else:
                 print("Skipping testing: Test dataset not available.")
