@@ -32,7 +32,7 @@ def data_provider(args, flag):
         train_only=train_only,
         smoke_test=smoke_test,
     )
-    print(flag, len(data_set))
+    print(f"{flag} subset size: {len(data_set)}")
 
     data_loader = DataLoader(data_set, batch_size=batch_size, shuffle=shuffle_flag, num_workers=args.num_data_workers, drop_last=drop_last)
     assert len(data_loader) > 0
