@@ -50,9 +50,9 @@ def train_loop_per_worker(config: dict):
     model.to(device)
 
     # === Get Data ===
-    train_data, train_loader = data_provider(args, flag="train")
+    train_loader = data_provider(args, flag="train")
     if not args.train_only:
-        val_data, val_loader = data_provider(args, flag="val")
+        val_loader = data_provider(args, flag="val")
 
     train_loader = train.torch.prepare_data_loader(train_loader)
     if not args.train_only:
@@ -191,7 +191,7 @@ def parse_args():
 
     # DLinear specific args
     parser.add_argument("--individual", action="store_true", default=False, help="DLinear: individual layers per channel")
-    # Note: enc_in and c_out are set dynamically based on features
+    # Note: enc_in is set dynamically based on features
 
 
     # optimization args
@@ -217,10 +217,9 @@ def parse_args():
     args.data_path = "ETTh1.csv"
     if args.features == 'S':  # S: univariate predict univariate
         args.enc_in = 1
-        args.c_out = 1
     else: # M or MS
         args.enc_in = 7 # ETTh1 has 7 features
-        args.c_out = 7
+
 
     # Ensure paths are absolute
     args.root_path = os.path.abspath(args.root_path)
@@ -262,9 +261,6 @@ if __name__ == "__main__":
             checkpoint_score_order="min"
         ),
     )
-    if not args.train_only:
-         run_config.checkpoint_config.checkpoint_score_attribute="val/loss"
-         run_config.checkpoint_config.checkpoint_score_order="min"
 
     trainer = TorchTrainer(
         train_loop_per_worker=train_loop_per_worker,

@@ -41,4 +41,4 @@ def data_provider(args, flag):
         drop_last=drop_last
     )
     assert len(data_loader) > 0
-    return data_set, data_loader
+    return data_loader
