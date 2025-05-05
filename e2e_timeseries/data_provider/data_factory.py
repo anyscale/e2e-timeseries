@@ -36,4 +36,4 @@ def data_provider(args, flag):
 
     data_loader = DataLoader(data_set, batch_size=batch_size, shuffle=shuffle_flag, num_workers=args.num_data_workers, drop_last=drop_last)
     assert len(data_loader) > 0
-    return data_loader
+    return data_loader, data_set

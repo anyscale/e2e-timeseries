@@ -33,8 +33,8 @@ class Predictor:
     def __call__(self, batch: dict) -> dict:
         """Process a batch of data for inference."""
         # Ensure input is a dictionary of numpy arrays as expected by map_batches
-        batch_x = torch.from_numpy(batch["batch_x"]).float().to(self.device)
-        batch_y = torch.from_numpy(batch["batch_y"]).float().to(self.device)
+        batch_x = torch.from_numpy(batch["x"]).float().to(self.device)
+        
 
         with torch.no_grad():
             outputs = self.model(batch_x)
@@ -42,10 +42,11 @@ class Predictor:
         # Extract predictions and targets based on model config
         f_dim = -1 if self.args.features == "MS" else 0
         outputs = outputs[:, -self.args.pred_len :, f_dim:]
-        batch_y_target = batch_y[:, -self.args.pred_len :, f_dim:].to(self.device)
+        batch_y = batch["y"]
+        batch_y_target = batch_y[:, -self.args.pred_len :, f_dim:]
 
         # Return numpy arrays
-        return {"predictions": outputs.cpu().numpy(), "targets": batch_y_target.cpu().numpy()}
+        return {"predictions": outputs.cpu().numpy(), "targets": batch_y_target}
 
 
 def parse_args():
@@ -60,6 +61,7 @@ def parse_args():
     parser.add_argument("--num_data_workers", type=int, default=1, help="Number of workers for PyTorch DataLoader during inference") # Usually fewer needed for inference
     parser.add_argument("--features", type=str, default="S", help="Forecasting task type (M, S, MS)")
     parser.add_argument("--target", type=str, default="OT", help="Target feature in S or MS task")
+    parser.add_argument("--smoke_test", action="store_true", default=False, help="Run a smoke test")
 
     # Model configuration args (must match the trained model)
     parser.add_argument("--seq_len", type=int, default=96, help="Input sequence length")
@@ -105,38 +107,35 @@ def parse_args():
 
 def main():
     args = parse_args()
+    args.train_only = False  # Important: Load test data
+
     ray.init(ignore_reinit_error=True)
 
     print("Loading test data...")
     # Use data_provider to get a DataLoader for the 'test' set
     # Note: We set train_only=False and don't need smoke_test here
-    test_loader_args = argparse.Namespace(
-        root_path=args.root_path,
-        data_path=args.data_path,
-        batch_size=args.batch_size, # Let Ray Data handle batching later if needed
-        seq_len=args.seq_len,
-        label_len=args.label_len,
-        pred_len=args.pred_len,
-        features=args.features,
-        target=args.target,
-        num_data_workers=args.num_data_workers,
-        train_only=False, # Important: Load test data
-        smoke_test=False
-    )
-    test_loader = data_provider(test_loader_args, flag='test')
+
+    _test_loader, ds = data_provider(args, flag='test')
 
     # Convert DataLoader to Ray Dataset
-    # The DataLoader yields tuples (batch_x, batch_y)
-    # We convert this to a Dataset of dictionaries for easier handling in map_batches
-    test_ds = ray.data.from_torch(test_loader)
-    raise Exception(f"test_ds: {test_ds.show(1)}")
-    test_ds = test_ds.map(lambda xy: {"batch_x": xy[0], "batch_y": xy[1]})
+    # The DataLoader yields tuples (x, y)
+    # Ray Data automatically converts this into records like {"item": [x, y]}
+    ds = ray.data.from_torch(ds)
+
+    # Preprocess items into the expected input format for the Predictor
+    def preprocess_items(item):
+        return {"x": np.array(item["item"][0]), "y": np.array(item["item"][1])}
+    
+    ds = ds.map(preprocess_items)
+
+
+    raise Exception(f"test_ds: {ds.take(1)}")
 
     # test_ds.show(1)
 
     print("Starting inference...")
     # Perform inference using map_batches with the Predictor class
-    predictions_ds = test_ds.map_batches(
+    predictions_ds = ds.map_batches(
         Predictor,
         fn_constructor_kwargs={"checkpoint_path": args.checkpoint_path, "args": args},
         batch_size=args.batch_size, # Process N samples per actor call
