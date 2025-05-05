@@ -4,25 +4,22 @@ import tempfile
 # Enable Ray Train V2
 os.environ["RAY_TRAIN_V2_ENABLED"] = "1"
 
-import time
-import warnings
 import argparse
 import random
+import time
+import warnings
 
 import numpy as np
-import pandas as pd
+import ray
+import ray.train.torch
 import torch
 import torch.nn as nn
-from torch import optim
-
-import ray
-from ray import train
-from ray.train import ScalingConfig, Checkpoint, CheckpointConfig, RunConfig
-from ray.train.torch import TorchTrainer
-import ray.train.torch
-
 from data_provider.data_factory import data_provider
 from models import DLinear
+from ray import train
+from ray.train import Checkpoint, CheckpointConfig, RunConfig, ScalingConfig
+from ray.train.torch import TorchTrainer
+from torch import optim
 from utils.metrics import metric
 from utils.tools import adjust_learning_rate
 
@@ -31,13 +28,12 @@ warnings.filterwarnings("ignore")
 
 def train_loop_per_worker(config: dict):
     """Main training loop adapted for Ray Train workers."""
-    args = argparse.Namespace(**config) # Convert dict back to Namespace for compatibility
+    args = argparse.Namespace(**config)  # Convert dict back to Namespace for compatibility
 
-    fix_seed = args.fix_seed if hasattr(args, 'fix_seed') else 2021
+    fix_seed = args.fix_seed if hasattr(args, "fix_seed") else 2021
     random.seed(fix_seed)
     torch.manual_seed(fix_seed)
     np.random.seed(fix_seed)
-
 
     if args.use_gpu:
         device = train.torch.get_device()
@@ -83,14 +79,14 @@ def train_loop_per_worker(config: dict):
                 with torch.amp.autocast("cuda"):
                     outputs = model(batch_x)
                     f_dim = -1 if args.features == "MS" else 0
-                    outputs = outputs[:, -args.pred_len:, f_dim:]
-                    batch_y_target = batch_y[:, -args.pred_len:, f_dim:].to(device)
+                    outputs = outputs[:, -args.pred_len :, f_dim:]
+                    batch_y_target = batch_y[:, -args.pred_len :, f_dim:].to(device)
                     loss = criterion(outputs, batch_y_target)
             else:
                 outputs = model(batch_x)
                 f_dim = -1 if args.features == "MS" else 0
-                outputs = outputs[:, -args.pred_len:, f_dim:]
-                batch_y_target = batch_y[:, -args.pred_len:, f_dim:].to(device)
+                outputs = outputs[:, -args.pred_len :, f_dim:]
+                batch_y_target = batch_y[:, -args.pred_len :, f_dim:].to(device)
                 loss = criterion(outputs, batch_y_target)
 
             train_loss_epoch.append(loss.item())
@@ -126,13 +122,13 @@ def train_loop_per_worker(config: dict):
 
                     if args.use_amp:
                         with torch.amp.autocast("cuda"):
-                             outputs = model(batch_x)
+                            outputs = model(batch_x)
                     else:
                         outputs = model(batch_x)
 
                     f_dim = -1 if args.features == "MS" else 0
-                    outputs = outputs[:, -args.pred_len:, f_dim:]
-                    batch_y_target = batch_y[:, -args.pred_len:, f_dim:].to(device)
+                    outputs = outputs[:, -args.pred_len :, f_dim:]
+                    batch_y_target = batch_y[:, -args.pred_len :, f_dim:].to(device)
 
                     all_preds.append(outputs.detach().cpu().numpy())
                     all_trues.append(batch_y_target.detach().cpu().numpy())
@@ -149,7 +145,7 @@ def train_loop_per_worker(config: dict):
             results_dict["val/mspe"] = mspe
             results_dict["val/rse"] = rse
 
-            print(f"Epoch {epoch+1}: Train Loss: {epoch_train_loss:.7f}, Val Loss: {mse:.7f}, Val MSE: {mse:.7f} (Duration: {epoch_duration:.2f}s)")
+            print(f"Epoch {epoch + 1}: Train Loss: {epoch_train_loss:.7f}, Val Loss: {mse:.7f}, Val MSE: {mse:.7f} (Duration: {epoch_duration:.2f}s)")
 
         # === Reporting and Checkpointing ===
         if train.get_context().get_world_rank() == 0:
@@ -174,13 +170,18 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Ray Train Script for Time Series Forecasting with DLinear on ETTh1")
 
     # basic config
-    parser.add_argument("--train_only", action='store_true', help="perform training on full input dataset without validation")
-    parser.add_argument("--smoke-test", action='store_true', default=False, help="run a quick smoke test on a small subset of data")
+    parser.add_argument("--train_only", action="store_true", help="perform training on full input dataset without validation")
+    parser.add_argument("--smoke-test", action="store_true", default=False, help="run a quick smoke test on a small subset of data")
 
     # data loader args
     parser.add_argument("--root_path", type=str, default="./e2e_timeseries/dataset/", help="root path of the data file")
     parser.add_argument("--num_data_workers", type=int, default=10, help="Number of workers for PyTorch DataLoader")
-    parser.add_argument("--features", type=str, default="S", help="forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate'")
+    parser.add_argument(
+        "--features",
+        type=str,
+        default="S",
+        help="forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate'",
+    )
     parser.add_argument("--target", type=str, default="OT", help="target feature in S or MS task")
     parser.add_argument("--checkpoints", type=str, default="./ray_checkpoints/", help="location for Ray Train checkpoints")
 
@@ -193,7 +194,6 @@ def parse_args():
     parser.add_argument("--individual", action="store_true", default=False, help="DLinear: individual layers per channel")
     # Note: enc_in is set dynamically based on features
 
-
     # optimization args
     parser.add_argument("--num_replicas", type=int, default=1, help="Number of Ray Train model replicas")
     parser.add_argument("--train_epochs", type=int, default=10, help="train epochs")
@@ -205,7 +205,7 @@ def parse_args():
     parser.add_argument("--use_amp", action="store_true", default=False, help="use automatic mixed precision training")
 
     # GPU / Resources
-    parser.add_argument("--use_gpu", action='store_true', default=False, help="use GPU for training")
+    parser.add_argument("--use_gpu", action="store_true", default=False, help="use GPU for training")
 
     # Other args
     parser.add_argument("--fix_seed", type=int, default=2021, help="random seed")
@@ -215,11 +215,10 @@ def parse_args():
     # Set dataset specific args
     args.data = "ETTh1"
     args.data_path = "ETTh1.csv"
-    if args.features == 'S':  # S: univariate predict univariate
+    if args.features == "S":  # S: univariate predict univariate
         args.enc_in = 1
-    else: # M or MS
-        args.enc_in = 7 # ETTh1 has 7 features
-
+    else:  # M or MS
+        args.enc_in = 7  # ETTh1 has 7 features
 
     # Ensure paths are absolute
     args.root_path = os.path.abspath(args.root_path)
@@ -255,11 +254,7 @@ if __name__ == "__main__":
     run_config = RunConfig(
         storage_path=args.checkpoints,
         name=run_name,
-        checkpoint_config=CheckpointConfig(
-            num_to_keep=2,
-            checkpoint_score_attribute="val/loss",
-            checkpoint_score_order="min"
-        ),
+        checkpoint_config=CheckpointConfig(num_to_keep=2, checkpoint_score_attribute="val/loss", checkpoint_score_order="min"),
     )
 
     trainer = TorchTrainer(
@@ -278,8 +273,8 @@ if __name__ == "__main__":
     if result.best_checkpoints:
         best_checkpoint = result.get_best_checkpoint(metric="val/loss" if not args.train_only else "train_loss", mode="min")
         if best_checkpoint:
-             print(f"Best checkpoint found:")
-             print(f"  Directory: {best_checkpoint.path}")
+            print("Best checkpoint found:")
+            print(f"  Directory: {best_checkpoint.path}")
         else:
             print("Could not retrieve the best checkpoint.")
     else:

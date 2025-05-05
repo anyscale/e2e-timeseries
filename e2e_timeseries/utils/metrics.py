@@ -33,5 +33,4 @@ def metric(pred, true):
     mspe = MSPE(pred, true)
     rse = RSE(pred, true)
 
-
     return mae, mse, rmse, mape, mspe, rse

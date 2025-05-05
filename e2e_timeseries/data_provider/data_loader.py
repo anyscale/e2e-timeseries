@@ -44,7 +44,7 @@ class Dataset_ETT_hour(Dataset):
         # Define borders based on train_only flag or smoke_test flag
         if self.smoke_test:
             print("--- Using smoke test data subset with Train/Val/Test splits ---")
-            smoke_total_samples = 1000 # Total samples for smoke test
+            smoke_total_samples = 1000  # Total samples for smoke test
             # Split smoke data: 80% train, 10% val, 10% test
             smoke_val_samples = smoke_total_samples // 10
             smoke_test_samples = smoke_total_samples // 10
@@ -56,16 +56,8 @@ class Dataset_ETT_hour(Dataset):
 
             # Calculate borders for the smoke test splits
             # Ensure seq_len doesn't cause negative indices
-            border1s = [
-                0, 
-                max(0, num_train - self.seq_len),
-                max(0, num_train + num_vali - self.seq_len)
-            ]
-            border2s = [
-                num_train,
-                num_train + num_vali,
-                num_train + num_vali + num_test
-            ]
+            border1s = [0, max(0, num_train - self.seq_len), max(0, num_train + num_vali - self.seq_len)]
+            border2s = [num_train, num_train + num_vali, num_train + num_vali + num_test]
 
         elif self.train_only:
             num_train = len(df_raw)

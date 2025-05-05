@@ -70,5 +70,3 @@ def visual(true, preds=None, name="./pic/test.pdf"):
         plt.plot(preds, label="Prediction", linewidth=2)
     plt.legend()
     plt.savefig(name, bbox_inches="tight")
-
-
