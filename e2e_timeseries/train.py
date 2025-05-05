@@ -52,11 +52,11 @@ def train_loop_per_worker(config: dict):
     # === Get Data ===
     train_data, train_loader = data_provider(args, flag="train")
     if not args.train_only:
-        vali_data, vali_loader = data_provider(args, flag="val")
+        val_data, val_loader = data_provider(args, flag="val")
 
     train_loader = train.torch.prepare_data_loader(train_loader)
     if not args.train_only:
-        vali_loader = train.torch.prepare_data_loader(vali_loader)
+        val_loader = train.torch.prepare_data_loader(val_loader)
 
     # === Optimizer and Criterion ===
     model_optim = optim.Adam(model.parameters(), lr=args.learning_rate)
@@ -120,7 +120,7 @@ def train_loop_per_worker(config: dict):
             all_preds = []
             all_trues = []
             with torch.no_grad():
-                for i, (batch_x, batch_y) in enumerate(vali_loader):
+                for i, (batch_x, batch_y) in enumerate(val_loader):
                     batch_x = batch_x.float().to(device)
                     batch_y = batch_y.float().to(device)
 
@@ -250,12 +250,12 @@ if __name__ == "__main__":
         name=f"DLinear_{args.data}_{args.features}_{args.target}_{time.strftime('%Y%m%d_%H%M%S')}",
         checkpoint_config=CheckpointConfig(
             num_to_keep=2,
-            checkpoint_score_attribute="vali_loss",
+            checkpoint_score_attribute="val_loss",
             checkpoint_score_order="min"
         ),
     )
     if not args.train_only:
-         run_config.checkpoint_config.checkpoint_score_attribute="vali_loss"
+         run_config.checkpoint_config.checkpoint_score_attribute="val_loss"
          run_config.checkpoint_config.checkpoint_score_order="min"
 
     trainer = TorchTrainer(
@@ -272,7 +272,7 @@ if __name__ == "__main__":
 
     # === Post-Training ===
     if result.best_checkpoints:
-        best_checkpoint = result.get_best_checkpoint(metric="vali_loss" if not args.train_only else "train_loss", mode="min")
+        best_checkpoint = result.get_best_checkpoint(metric="val_loss" if not args.train_only else "train_loss", mode="min")
         if best_checkpoint:
              print(f"Best checkpoint found:")
              print(f"  Directory: {best_checkpoint.path}")
