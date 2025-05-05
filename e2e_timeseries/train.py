@@ -183,7 +183,7 @@ def parse_args():
         help="forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate'",
     )
     parser.add_argument("--target", type=str, default="OT", help="target feature in S or MS task")
-    parser.add_argument("--checkpoints", type=str, default="./ray_checkpoints/", help="location for Ray Train checkpoints")
+    parser.add_argument("--checkpoints", type=str, default="./checkpoints/", help="location for Ray Train checkpoints")
 
     # forecasting task args
     parser.add_argument("--seq_len", type=int, default=96, help="input sequence length")
@@ -271,7 +271,7 @@ if __name__ == "__main__":
 
     # === Post-Training ===
     if result.best_checkpoints:
-        best_checkpoint = result.get_best_checkpoint(metric="val/loss" if not args.train_only else "train_loss", mode="min")
+        best_checkpoint = result.get_best_checkpoint(metric="val/loss" if not args.train_only else "train/loss", mode="min")
         if best_checkpoint:
             print("Best checkpoint found:")
             print(f"  Directory: {best_checkpoint.path}")
