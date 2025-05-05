@@ -73,13 +73,10 @@ def train_loop_per_worker(config: dict):
         train_loss_epoch = []
         epoch_start_time = time.time()
 
-        for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
+        for i, (batch_x, batch_y) in enumerate(train_loader):
             model_optim.zero_grad()
             batch_x = batch_x.float().to(device)
             batch_y = batch_y.float().to(device)
-            # Marks might still be needed by the data loader or specific DLinear configs
-            batch_x_mark = batch_x_mark.float().to(device)
-            batch_y_mark = batch_y_mark.float().to(device)
 
             # Forward pass
             if args.use_amp:
@@ -123,11 +120,9 @@ def train_loop_per_worker(config: dict):
             all_preds = []
             all_trues = []
             with torch.no_grad():
-                for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(vali_loader):
+                for i, (batch_x, batch_y) in enumerate(vali_loader):
                     batch_x = batch_x.float().to(device)
                     batch_y = batch_y.float().to(device)
-                    batch_x_mark = batch_x_mark.float().to(device)
-                    batch_y_mark = batch_y_mark.float().to(device)
 
                     if args.use_amp:
                         with torch.amp.autocast("cuda"):
