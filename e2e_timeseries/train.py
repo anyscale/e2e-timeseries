@@ -19,6 +19,7 @@ import ray
 from ray import train
 from ray.train import ScalingConfig, Checkpoint, CheckpointConfig, RunConfig
 from ray.train.torch import TorchTrainer
+import ray.train.torch
 
 from data_provider.data_factory import data_provider
 from models import DLinear
@@ -173,7 +174,7 @@ def parse_args():
 
     # data loader args
     parser.add_argument("--root_path", type=str, default="./e2e_timeseries/dataset/", help="root path of the data file")
-    parser.add_argument("--num_data_workers", type=int, default=5, help="Number of workers for PyTorch DataLoader")
+    parser.add_argument("--num_data_workers", type=int, default=10, help="Number of workers for PyTorch DataLoader")
     parser.add_argument("--features", type=str, default="M", help="forecasting task, options:[M, S, MS] (M -> 7 features for ETTh1)")
     parser.add_argument("--target", type=str, default="OT", help="target feature in S or MS task")
     parser.add_argument("--freq", type=str, default="h", help="freq for time features encoding (ETTh1 is hourly)")
@@ -247,7 +248,6 @@ if __name__ == "__main__":
             checkpoint_score_attribute="vali_loss",
             checkpoint_score_order="min"
         ),
-        # failure_config=ray.train.FailureConfig(max_failures=-1) # Example: allow infinite restarts
     )
     if not args.train_only:
          run_config.checkpoint_config.checkpoint_score_attribute="vali_loss"
