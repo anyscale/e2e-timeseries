@@ -1,6 +1,8 @@
 import os
 import warnings
+from typing import Dict
 
+import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import Dataset
@@ -26,19 +28,18 @@ class TimeSeriesDataset(Dataset):
         self.set_type = type_map[flag]
 
         self.features = "S"
-        self.target = "OT"
+        self.target = "OT"  # col name of the target variable (oil temperature)
         self.scale = True
-        self.data_path = "ETTh1.csv"
+        self.data_path = "ETTh1.csv"  # fixme read from argsS
 
         self.root_path = root_path
-        # Store smoke_test flag
         self.smoke_test = smoke_test
 
         self.__read_data__()
 
     def __read_data__(self):
         self.scaler = StandardScaler()
-        df_raw = pd.read_csv(os.path.join(self.root_path, self.data_path))
+        df_raw = pd.read_csv(os.path.join(self.root_path, self.data_path), header=0)
         # Define time periods in hours
         hours_per_day = 24
         days_per_month = 30
@@ -72,6 +73,7 @@ class TimeSeriesDataset(Dataset):
 
         train_data = df_data[border1s[0] : border2s[0]]
         self.scaler.fit(train_data.values)
+        # fixme: we shouldn't transform the whole dataset, just the oil temperature data?
         data = self.scaler.transform(df_data.values)
 
         self.data_x = data[border1:border2]
@@ -94,7 +96,7 @@ class TimeSeriesDataset(Dataset):
                 self.data_x = self.data_x[:actual_len]
                 self.data_y = self.data_y[:actual_len]
 
-    def __getitem__(self, index):
+    def __getitem__(self, index) -> Dict[str, np.ndarray]:
         s_begin = index
         s_end = s_begin + self.seq_len
         r_begin = s_end - self.label_len
@@ -103,6 +105,11 @@ class TimeSeriesDataset(Dataset):
         seq_x = self.data_x[s_begin:s_end]
         seq_y = self.data_y[r_begin:r_end]
 
+        # Squeeze the arrays to make them 1D
+        seq_x = seq_x.squeeze()
+        seq_y = seq_y.squeeze()
+
+        # return {'x': seq_x, 'y': seq_y}
         return seq_x, seq_y
 
     def __len__(self):

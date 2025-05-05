@@ -94,6 +94,9 @@ if __name__ == "__main__":
     val_ds = data_provider(args, flag="val")
     test_ds = data_provider(args, flag="test")
 
+    print(f"example train_ds: {train_ds.show(1)}")
+    raise
+
     datasets = {"train": train_ds}
     if val_ds and not args.train_only:
         datasets["val"] = val_ds

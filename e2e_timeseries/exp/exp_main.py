@@ -2,6 +2,7 @@ import argparse
 import os
 import time
 import warnings
+from typing import Any, Dict
 
 import numpy as np
 import ray
@@ -142,11 +143,12 @@ def train_loop_per_worker(config: dict):
         num_batches = 0
         # Ray Data Integration: Iterate over batches
         # Use `iter_torch_batches` for automatic batching and device placement
-        for batch in train_ds_shard.iter_torch_batches(batch_size=args.batch_size, dtypes=torch.float, device=ray.train.torch.get_device()):
+        for batch in train_ds_shard.iter_torch_batches(
+            batch_size=args.batch_size, dtypes=torch.float, device=ray.train.torch.get_device(), collate_fn=collate_fn
+        ):
             num_batches += 1
             optimizer.zero_grad()
-            batch_x = batch["x"]
-            batch_y = batch["y"]
+            batch_x, batch_y = batch
 
             # --- AMP Training ---
             if args.use_amp:
@@ -179,9 +181,10 @@ def train_loop_per_worker(config: dict):
             model.eval()
             vali_loss_epoch = []
             with torch.no_grad():
-                for batch in vali_ds_shard.iter_torch_batches(batch_size=args.batch_size, dtypes=torch.float, device=ray.train.torch.get_device()):
-                    batch_x = batch["x"]
-                    batch_y = batch["y"]
+                for batch in vali_ds_shard.iter_torch_batches(
+                    batch_size=args.batch_size, dtypes=torch.float, device=ray.train.torch.get_device(), collate_fn=collate_fn
+                ):
+                    batch_x, batch_y = batch
 
                     if args.use_amp:
                         with torch.amp.autocast("cuda" if torch.cuda.is_available() else "cpu"):
@@ -252,6 +255,12 @@ def acquire_device(use_gpu_flag):  # TODO: might not be necessary with Ray Train
     return device
 
 
+def collate_fn(batch: Dict[str, np.ndarray]) -> Any:
+    x = torch.tensor(batch["x"], dtype=torch.float32)
+    y = torch.tensor(batch["y"], dtype=torch.float32)
+    return x, y
+
+
 def run_testing(args, test_checkpoint_path, test_ds, scaler=None):
     if test_ds is None:
         print("Error: Ray Dataset for testing not provided.")
@@ -308,9 +317,8 @@ def run_testing(args, test_checkpoint_path, test_ds, scaler=None):
 
     with torch.no_grad():
         batch_idx = 0
-        for batch in test_ds.iter_torch_batches(batch_size=args.batch_size, dtypes=torch.float, device=device):
-            batch_x = batch["x"]
-            batch_y = batch["y"]
+        for batch in test_ds.iter_torch_batches(batch_size=args.batch_size, dtypes=torch.float, device=device, collate_fn=collate_fn):
+            batch_x, batch_y = batch
 
             if args.use_amp and device.type == "cuda":
                 with torch.amp.autocast("cuda"):
