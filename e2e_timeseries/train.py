@@ -175,7 +175,7 @@ def parse_args():
     # data loader args
     parser.add_argument("--root_path", type=str, default="./e2e_timeseries/dataset/", help="root path of the data file")
     parser.add_argument("--num_data_workers", type=int, default=10, help="Number of workers for PyTorch DataLoader")
-    parser.add_argument("--features", type=str, default="M", help="forecasting task, options:[M, S, MS] (M -> 7 features for ETTh1)")
+    parser.add_argument("--features", type=str, default="MS", help="forecasting task, options:[M, S, MS] (M -> 7 features for ETTh1)")
     parser.add_argument("--target", type=str, default="OT", help="target feature in S or MS task")
     parser.add_argument("--freq", type=str, default="h", help="freq for time features encoding (ETTh1 is hourly)")
     parser.add_argument("--checkpoints", type=str, default="./ray_checkpoints/", help="location for Ray Train checkpoints")
