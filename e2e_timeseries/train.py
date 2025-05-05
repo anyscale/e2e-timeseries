@@ -242,7 +242,7 @@ if __name__ == "__main__":
 
     run_config = RunConfig(
         storage_path=args.checkpoints,
-        name=f"DLinear_{args.data}",
+        name=f"DLinear_{args.data}_{args.features}_{args.target}_{time.strftime('%Y%m%d_%H%M%S')}",
         checkpoint_config=CheckpointConfig(
             num_to_keep=2,
             checkpoint_score_attribute="vali_loss",
