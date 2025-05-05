@@ -4,16 +4,11 @@ from torch.utils.data import DataLoader
 
 def data_provider(args, flag):
     # Determine Data class based on flag
-    if flag == "test":
-        Data = Dataset_ETT_hour
-        batch_size = args.batch_size
+    if flag in ["test", "val"]:
         shuffle_flag = False
         drop_last = False
     else:  # flag == 'train' or 'val'
-        Data = Dataset_ETT_hour
-        batch_size = args.batch_size
         shuffle_flag = True
-        drop_last = True
 
     train_only = args.train_only
     smoke_test = args.smoke_test if hasattr(args, "smoke_test") else False
@@ -22,7 +17,7 @@ def data_provider(args, flag):
     if smoke_test:
         drop_last = False
 
-    data_set = Data(
+    data_set = Dataset_ETT_hour(
         root_path=args.root_path,
         data_path=args.data_path,
         flag=flag,
@@ -34,6 +29,6 @@ def data_provider(args, flag):
     )
     print(f"{flag} subset size: {len(data_set)}")
 
-    data_loader = DataLoader(data_set, batch_size=batch_size, shuffle=shuffle_flag, num_workers=args.num_data_workers, drop_last=drop_last)
+    data_loader = DataLoader(data_set, batch_size=args.batch_size, shuffle=shuffle_flag, num_workers=args.num_data_workers, drop_last=drop_last)
     assert len(data_loader) > 0
     return data_loader, data_set

@@ -7,6 +7,7 @@ import os
 import numpy as np
 import ray
 import torch
+import pandas as pd
 
 os.environ["RAY_TRAIN_V2_ENABLED"] = "1"
 
@@ -25,28 +26,39 @@ class Predictor:
         # Load model from checkpoint
         self.model = DLinear.Model(args).float()
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
-        # raise Exception(f"checkpoint keys: {checkpoint.keys()}")
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.model.to(self.device)
         self.model.eval() # Set model to evaluation mode
 
-    def __call__(self, batch: dict) -> dict:
-        """Process a batch of data for inference."""
-        # Ensure input is a dictionary of numpy arrays as expected by map_batches
+    def __call__(self, batch: dict[str, np.ndarray]) -> dict:
+        """Process a batch of data for inference (numpy batch format)."""
+        # batch['x'] shape: (N, seq_len)
+        # batch['y'] shape: (N, label_len + pred_len)
         batch_x = torch.from_numpy(batch["x"]).float().to(self.device)
-        
 
         with torch.no_grad():
-            outputs = self.model(batch_x)
+            outputs = self.model(batch_x) # Shape (N, pred_len, features_out)
 
-        # Extract predictions and targets based on model config
+        # Extract predictions based on model config
         f_dim = -1 if self.args.features == "MS" else 0
+        # Shape (N, pred_len, 1) for features='S'
         outputs = outputs[:, -self.args.pred_len :, f_dim:]
+        outputs_np = outputs.cpu().numpy()
+
+        # Extract the target part from batch['y']
+        # Shape (N, label_len + pred_len)
         batch_y = batch["y"]
-        batch_y_target = batch_y[:, -self.args.pred_len :, f_dim:]
+        # Shape (N, pred_len)
+        batch_y_target = batch_y[:, -self.args.pred_len :]
+
+        # Ensure shapes match for metric calculation (squeeze last dim if needed)
+        if self.args.features == "S" and outputs_np.shape[-1] == 1:
+            outputs_np = outputs_np.squeeze(-1) # Shape (N, pred_len)
+        if self.args.features == "S" and batch_y_target.ndim == 3 and batch_y_target.shape[-1] == 1:
+             batch_y_target = batch_y_target.squeeze(-1) # Shape (N, pred_len)
 
         # Return numpy arrays
-        return {"predictions": outputs.cpu().numpy(), "targets": batch_y_target}
+        return {"predictions": outputs_np, "targets": batch_y_target}
 
 
 def parse_args():
@@ -114,45 +126,40 @@ def main():
     print("Loading test data...")
     # Use data_provider to get a DataLoader for the 'test' set
     # Note: We set train_only=False and don't need smoke_test here
+    _loader, ds = data_provider(args, flag='test')
 
-    _test_loader, ds = data_provider(args, flag='test')
+    print(f"Length of ds via len(): {len(ds)}") # Expect 2784 due to workaround
+    #print(f"Length of _loader via len(): {len(_loader)}") # Expect ceil(2784 / batch_size)
 
     # Convert DataLoader to Ray Dataset
     # The DataLoader yields tuples (x, y)
     # Ray Data automatically converts this into records like {"item": [x, y]}
-    ds = ray.data.from_torch(ds)
+    ds = ray.data.from_torch(ds) # Always pass the dataset, not the dataloader
 
     # Preprocess items into the expected input format for the Predictor
     def preprocess_items(item):
+        # FIXME
+        assert len(item["item"][0]) > 0, f"x is empty: {item['item'][0]} \n\n {item}"
+        assert len(item["item"][1]) > 0, f"y is empty: {item['item'][1]} \n\n {item}"
         return {"x": np.array(item["item"][0]), "y": np.array(item["item"][1])}
     
     ds = ds.map(preprocess_items)
 
-
-    raise Exception(f"test_ds: {ds.take(1)}")
-
-    # test_ds.show(1)
-
     print("Starting inference...")
     # Perform inference using map_batches with the Predictor class
-    predictions_ds = ds.map_batches(
+    ds = ds.map_batches(
         Predictor,
         fn_constructor_kwargs={"checkpoint_path": args.checkpoint_path, "args": args},
         batch_size=args.batch_size, # Process N samples per actor call
         concurrency=args.num_predictor_replicas,
         num_gpus=args.num_gpus_per_worker if args.use_gpu else 0,
-        batch_format="pandas"
+        batch_format="numpy"
     )
-
-    print(f"Inference complete. Predictions dataset schema: {predictions_ds.schema()}")
-    # predictions_ds.show(1)
-
-    print("Calculating metrics on the full test set...")
 
     # Collect all predictions and targets from the distributed dataset
     # This might be memory intensive for very large datasets.
     # Consider alternatives like custom aggregation if memory becomes an issue.
-    all_results = predictions_ds.take_all()
+    all_results = ds.take_all()
 
     if not all_results:
         print("Error: No results were collected from the prediction dataset.")

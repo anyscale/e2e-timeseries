@@ -96,6 +96,10 @@ class Dataset_ETT_hour(Dataset):
         self.data_y = data[border1:border2]
 
     def __getitem__(self, index):
+        max_valid_index = len(self.data_x) - self.seq_len - self.pred_len
+        if index > max_valid_index:
+             raise IndexError(f"Attempted to access index {index}, but maximum valid index is {max_valid_index}")
+
         s_begin = index
         s_end = s_begin + self.seq_len
         r_begin = s_end - self.label_len
@@ -105,12 +109,12 @@ class Dataset_ETT_hour(Dataset):
         seq_x = self.data_x[s_begin:s_end].squeeze(-1)
         seq_y = self.data_y[r_begin:r_end].squeeze(-1)
 
+        assert len(seq_x) > 0, f"seq_x is empty at index {index}: {seq_x} \\n\\n {self.data_x[s_begin:s_end]}"
+        assert len(seq_y) > 0, f"seq_y is empty at index {index}: {seq_y} \\n\\n {self.data_y[r_begin:r_end]}"
+
         return seq_x, seq_y
 
     def __len__(self):
-        # # Handle case where border1/border2 might lead to empty data for val/test in train_only mode
-        # if border2s[self.set_type] <= border1s[self.set_type]:
-        #      return 0
         return len(self.data_x) - self.seq_len - self.pred_len + 1
 
     def inverse_transform(self, data):
