@@ -10,7 +10,7 @@ warnings.filterwarnings("ignore")
 
 class Dataset_ETT_hour(Dataset):
     def __init__(
-        self, root_path, flag="train", size=None, features="S", data_path="ETTh1.csv", target="OT", scale=True, train_only=False
+        self, root_path, flag="train", size=None, features="S", data_path="ETTh1.csv", target="OT", scale=True, train_only=False, smoke_test=False
     ):
         # size [seq_len, label_len, pred_len]
         # info
@@ -31,6 +31,7 @@ class Dataset_ETT_hour(Dataset):
         self.target = target
         self.scale = scale
         self.train_only = train_only
+        self.smoke_test = smoke_test
 
         self.root_path = root_path
         self.data_path = data_path
@@ -40,12 +41,38 @@ class Dataset_ETT_hour(Dataset):
         self.scaler = StandardScaler()
         df_raw = pd.read_csv(os.path.abspath(os.path.join(self.root_path, self.data_path)))
 
-        # Define borders based on train_only flag
-        if self.train_only:
+        # Define borders based on train_only flag or smoke_test flag
+        if self.smoke_test:
+            print("--- Using smoke test data subset with Train/Val/Test splits ---")
+            smoke_total_samples = 1000 # Total samples for smoke test
+            # Split smoke data: 80% train, 10% val, 10% test
+            smoke_val_samples = smoke_total_samples // 10
+            smoke_test_samples = smoke_total_samples // 10
+            smoke_train_samples = smoke_total_samples - smoke_val_samples - smoke_test_samples
+
+            num_train = smoke_train_samples
+            num_vali = smoke_val_samples
+            num_test = smoke_test_samples
+
+            # Calculate borders for the smoke test splits
+            # Ensure seq_len doesn't cause negative indices
+            border1s = [
+                0, 
+                max(0, num_train - self.seq_len),
+                max(0, num_train + num_vali - self.seq_len)
+            ]
+            border2s = [
+                num_train,
+                num_train + num_vali,
+                num_train + num_vali + num_test
+            ]
+
+        elif self.train_only:
             num_train = len(df_raw)
             num_vali = 0
             num_test = 0
-            border1s = [0, 0, 0] # Train uses all data, val/test are empty
+            # Train on all data, val/test are empty
+            border1s = [0, 0, 0]
             border2s = [num_train, 0, 0]
         else:
             # Original ETTh1 split logic
@@ -66,8 +93,9 @@ class Dataset_ETT_hour(Dataset):
 
         if self.scale:
             # Scale using the training portion defined by border1s[0] and border2s[0]
-            train_data = df_raw[cols_data][border1s[0] : border2s[0]] if self.features != "S" else df_raw[[self.target]][border1s[0] : border2s[0]]
-            self.scaler.fit(train_data.values)
+            # This ensures the scaler is fit correctly even in smoke_test or train_only mode
+            train_data_for_scaler = df_raw[cols_data if self.features != "S" else [self.target]][border1s[0] : border2s[0]]
+            self.scaler.fit(train_data_for_scaler.values)
             data = self.scaler.transform(df_data.values)
         else:
             data = df_data.values

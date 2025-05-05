@@ -176,13 +176,13 @@ def parse_args():
 
     # basic config
     parser.add_argument("--train_only", action='store_true', help="perform training on full input dataset without validation")
+    parser.add_argument("--smoke-test", action='store_true', default=False, help="run a quick smoke test on a small subset of data")
 
     # data loader args
     parser.add_argument("--root_path", type=str, default="./e2e_timeseries/dataset/", help="root path of the data file")
     parser.add_argument("--num_data_workers", type=int, default=10, help="Number of workers for PyTorch DataLoader")
     parser.add_argument("--features", type=str, default="S", help="forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate'")
     parser.add_argument("--target", type=str, default="OT", help="target feature in S or MS task")
-    parser.add_argument("--freq", type=str, default="h", help="freq for time features encoding (ETTh1 is hourly)")
     parser.add_argument("--checkpoints", type=str, default="./ray_checkpoints/", help="location for Ray Train checkpoints")
 
     # forecasting task args
@@ -194,8 +194,6 @@ def parse_args():
     parser.add_argument("--individual", action="store_true", default=False, help="DLinear: individual layers per channel")
     # Note: enc_in and c_out are set dynamically based on features
 
-    # Other args needed by data loader or training loop
-    parser.add_argument('--embed', type=str, default='timeF', help='time features encoding')
 
     # optimization args
     parser.add_argument("--num_replicas", type=int, default=1, help="Number of Ray Train model replicas")
@@ -230,6 +228,13 @@ def parse_args():
     args.data_path = os.path.abspath(os.path.join(args.root_path, args.data_path))
     args.checkpoints = os.path.abspath(args.checkpoints)
 
+    # --- Smoke Test Modifications ---
+    if args.smoke_test:
+        print("--- RUNNING SMOKE TEST ---")
+        args.train_epochs = 1
+        args.batch_size = 2
+        args.num_data_workers = 1
+
     return args
 
 
@@ -245,9 +250,13 @@ if __name__ == "__main__":
         # resources_per_worker={"GPU": 1} if args.use_gpu else {}
     )
 
+    # Adjust run name for smoke test
+    run_name_prefix = "SmokeTest_" if args.smoke_test else ""
+    run_name = f"{run_name_prefix}DLinear_{args.data}_{args.features}_{args.target}_{time.strftime('%Y%m%d_%H%M%S')}"
+
     run_config = RunConfig(
         storage_path=args.checkpoints,
-        name=f"DLinear_{args.data}_{args.features}_{args.target}_{time.strftime('%Y%m%d_%H%M%S')}",
+        name=run_name,
         checkpoint_config=CheckpointConfig(
             num_to_keep=2,
             checkpoint_score_attribute="val_loss",

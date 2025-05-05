@@ -14,9 +14,12 @@ def data_provider(args, flag):
         shuffle_flag = True
         drop_last = True
 
-    timeenc = 0 if args.embed != "timeF" else 1
-    freq = args.freq
     train_only = args.train_only
+    smoke_test = args.smoke_test if hasattr(args, 'smoke_test') else False
+
+    # Override drop_last for smoke test to prevent data loss
+    if smoke_test:
+        drop_last = False
 
     data_set = Data(
         root_path=args.root_path,
@@ -25,9 +28,8 @@ def data_provider(args, flag):
         size=[args.seq_len, args.label_len, args.pred_len],
         features=args.features,
         target=args.target,
-        timeenc=timeenc,
-        freq=freq,
         train_only=train_only,
+        smoke_test=smoke_test,
     )
     print(flag, len(data_set))
 
@@ -38,4 +40,5 @@ def data_provider(args, flag):
         num_workers=args.num_data_workers,
         drop_last=drop_last
     )
+    assert len(data_loader) > 0
     return data_set, data_loader
