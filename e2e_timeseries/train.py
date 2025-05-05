@@ -140,7 +140,7 @@ def train_loop_per_worker(config: dict):
             all_preds = np.concatenate(all_preds, axis=0)
             all_trues = np.concatenate(all_trues, axis=0)
 
-            mae, mse, rmse, mape, mspe, rse, corr = metric(all_preds, all_trues)
+            mae, mse, rmse, mape, mspe, rse = metric(all_preds, all_trues)
 
             results_dict["val/loss"] = mse
             results_dict["val/mae"] = mae
@@ -148,7 +148,6 @@ def train_loop_per_worker(config: dict):
             results_dict["val/mape"] = mape
             results_dict["val/mspe"] = mspe
             results_dict["val/rse"] = rse
-            results_dict["val/corr"] = corr
 
             print(f"Epoch {epoch+1}: Train Loss: {epoch_train_loss:.7f}, Val Loss: {mse:.7f}, Val MSE: {mse:.7f} (Duration: {epoch_duration:.2f}s)")
 
@@ -231,7 +230,7 @@ def parse_args():
     # --- Smoke Test Modifications ---
     if args.smoke_test:
         print("--- RUNNING SMOKE TEST ---")
-        args.train_epochs = 1
+        args.train_epochs = 2
         args.batch_size = 2
         args.num_data_workers = 1
 
@@ -259,12 +258,12 @@ if __name__ == "__main__":
         name=run_name,
         checkpoint_config=CheckpointConfig(
             num_to_keep=2,
-            checkpoint_score_attribute="val_loss",
+            checkpoint_score_attribute="val/loss",
             checkpoint_score_order="min"
         ),
     )
     if not args.train_only:
-         run_config.checkpoint_config.checkpoint_score_attribute="val_loss"
+         run_config.checkpoint_config.checkpoint_score_attribute="val/loss"
          run_config.checkpoint_config.checkpoint_score_order="min"
 
     trainer = TorchTrainer(
@@ -281,7 +280,7 @@ if __name__ == "__main__":
 
     # === Post-Training ===
     if result.best_checkpoints:
-        best_checkpoint = result.get_best_checkpoint(metric="val_loss" if not args.train_only else "train_loss", mode="min")
+        best_checkpoint = result.get_best_checkpoint(metric="val/loss" if not args.train_only else "train_loss", mode="min")
         if best_checkpoint:
              print(f"Best checkpoint found:")
              print(f"  Directory: {best_checkpoint.path}")
