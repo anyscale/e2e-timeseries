@@ -46,9 +46,9 @@ def train_loop_per_worker(config: dict):
     model.to(device)
 
     # === Get Data ===
-    train_loader = data_provider(args, flag="train")
+    train_loader, _train_ds = data_provider(args, flag="train")
     if not args.train_only:
-        val_loader = data_provider(args, flag="val")
+        val_loader, _val_ds = data_provider(args, flag="val")
 
     train_loader = train.torch.prepare_data_loader(train_loader)
     if not args.train_only:
@@ -80,13 +80,13 @@ def train_loop_per_worker(config: dict):
                     outputs = model(batch_x)
                     f_dim = -1 if args.features == "MS" else 0
                     outputs = outputs[:, -args.pred_len :, f_dim:]
-                    batch_y_target = batch_y[:, -args.pred_len :, f_dim:].to(device)
+                    batch_y_target = batch_y.unsqueeze(-1)[:, -args.pred_len :, f_dim:].to(device)
                     loss = criterion(outputs, batch_y_target)
             else:
                 outputs = model(batch_x)
                 f_dim = -1 if args.features == "MS" else 0
                 outputs = outputs[:, -args.pred_len :, f_dim:]
-                batch_y_target = batch_y[:, -args.pred_len :, f_dim:].to(device)
+                batch_y_target = batch_y.unsqueeze(-1)[:, -args.pred_len :, f_dim:].to(device)
                 loss = criterion(outputs, batch_y_target)
 
             train_loss_epoch.append(loss.item())
@@ -118,7 +118,6 @@ def train_loop_per_worker(config: dict):
             with torch.no_grad():
                 for i, (batch_x, batch_y) in enumerate(val_loader):
                     batch_x = batch_x.float().to(device)
-                    batch_y = batch_y.float().to(device)
 
                     if args.use_amp:
                         with torch.amp.autocast("cuda"):
@@ -128,7 +127,7 @@ def train_loop_per_worker(config: dict):
 
                     f_dim = -1 if args.features == "MS" else 0
                     outputs = outputs[:, -args.pred_len :, f_dim:]
-                    batch_y_target = batch_y[:, -args.pred_len :, f_dim:].to(device)
+                    batch_y_target = batch_y.unsqueeze(-1)[:, -args.pred_len :, f_dim:].to(device)
 
                     all_preds.append(outputs.detach().cpu().numpy())
                     all_trues.append(batch_y_target.detach().cpu().numpy())

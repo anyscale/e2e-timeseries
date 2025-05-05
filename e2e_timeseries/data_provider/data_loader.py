@@ -101,12 +101,9 @@ class Dataset_ETT_hour(Dataset):
         r_begin = s_end - self.label_len
         r_end = r_begin + self.label_len + self.pred_len
 
-        seq_x = self.data_x[s_begin:s_end]
-        seq_y = self.data_y[r_begin:r_end]
-
-        # Flatten into 1D numpy arrays
-        seq_x = seq_x.flatten()
-        seq_y = seq_y.flatten()
+        # Turn into 1D numpy arrays
+        seq_x = self.data_x[s_begin:s_end].squeeze(-1)
+        seq_y = self.data_y[r_begin:r_end].squeeze(-1)
 
         return seq_x, seq_y
 
