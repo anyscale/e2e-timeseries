@@ -113,14 +113,15 @@ def train_loop_per_worker(config: dict):
 
         results_dict = {
             "epoch": epoch + 1,
-            "train_loss": epoch_train_loss,
+            "train/loss": epoch_train_loss,
             "epoch_duration_s": epoch_duration,
         }
 
         # === Validation ===
         if not args.train_only:
             model.eval()
-            total_vali_loss = []
+            all_preds = []
+            all_trues = []
             with torch.no_grad():
                 for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(vali_loader):
                     batch_x = batch_x.float().to(device)
@@ -138,14 +139,23 @@ def train_loop_per_worker(config: dict):
                     outputs = outputs[:, -args.pred_len:, f_dim:]
                     batch_y_target = batch_y[:, -args.pred_len:, f_dim:].to(device)
 
-                    vali_loss = criterion(outputs, batch_y_target)
-                    total_vali_loss.append(vali_loss.item())
+                    all_preds.append(outputs.detach().cpu().numpy())
+                    all_trues.append(batch_y_target.detach().cpu().numpy())
 
-            epoch_vali_loss = np.average(total_vali_loss)
-            results_dict["vali_loss"] = epoch_vali_loss
-            # FIXME: calculate other metrics like MAE, RMSE, etc.
+            all_preds = np.concatenate(all_preds, axis=0)
+            all_trues = np.concatenate(all_trues, axis=0)
 
-            print(f"Epoch {epoch+1}: Train Loss: {epoch_train_loss:.7f}, Vali Loss: {epoch_vali_loss:.7f}")
+            mae, mse, rmse, mape, mspe, rse, corr = metric(all_preds, all_trues)
+
+            results_dict["val/loss"] = mse
+            results_dict["val/mae"] = mae
+            results_dict["val/rmse"] = rmse
+            results_dict["val/mape"] = mape
+            results_dict["val/mspe"] = mspe
+            results_dict["val/rse"] = rse
+            results_dict["val/corr"] = corr
+
+            print(f"Epoch {epoch+1}: Train Loss: {epoch_train_loss:.7f}, Val Loss: {mse:.7f}, Val MSE: {mse:.7f} (Duration: {epoch_duration:.2f}s)")
 
         # === Reporting and Checkpointing ===
         if train.get_context().get_world_rank() == 0:
@@ -213,7 +223,7 @@ def parse_args():
     # Set dataset specific args
     args.data = "ETTh1"
     args.data_path = "ETTh1.csv"
-    if args.features == 'S':
+    if args.features == 'S':  # S: univariate predict univariate
         args.enc_in = 1
         args.c_out = 1
     else: # M or MS
