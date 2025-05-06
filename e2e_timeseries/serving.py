@@ -1,7 +1,6 @@
 """
 Online serving script for DLinear model on ETT dataset using Ray Serve.
 """
-import argparse
 import asyncio
 import os
 
@@ -9,15 +8,13 @@ import aiohttp
 import numpy as np
 import requests
 import torch
-from ray import serve
-from ray.serve.handle import DeploymentHandle
-from starlette.requests import Request
-
-
 from models import DLinear
+from ray import serve
+from starlette.requests import Request
 
 os.environ["RAY_TRAIN_V2_ENABLED"] = "1"
 
+DEPLOYMENT_NAME = "dlinear-ett-server"
 
 # FIXME: update GPU usage later
 @serve.deployment(num_replicas=1, ray_actor_options={"num_cpus": 1, "num_gpus": 0})
@@ -25,6 +22,7 @@ class DLinearModelServe:
     def __init__(self, model_checkpoint_path: str | None = None):
         checkpoint = torch.load(model_checkpoint_path, map_location=torch.device("cpu")) # Load to CPU first
         loaded_train_args = checkpoint["train_args"]
+        self._seq_len = loaded_train_args["seq_len"]
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {self.device}")
 
@@ -58,8 +56,10 @@ class DLinearModelServe:
                 # For simplicity, we'll try to predict even if it might fail for this item.
                 # A robust way is to return error markers.
                 # For this example, let's assume valid inputs or make it fail clearly.
-                if series is None: series = [0.0] * self.args.seq_len # Dummy to avoid immediate crash
-                elif len(series) != self.args.seq_len: series = series[:self.args.seq_len] + [0.0]*(self.args.seq_len - len(series)) # Pad/truncate
+                if series is None: 
+                    series = [0.0] * self.args.seq_len # Dummy to avoid immediate crash
+                elif len(series) != self.args.seq_len:
+                    series = series[:self.args.seq_len] + [0.0]*(self.args.seq_len - len(series)) # Pad/truncate
 
             batch_series.append(series)
 
@@ -115,6 +115,9 @@ class DLinearModelServe:
         # predict_batch expects a list of dictionaries
         prediction_list = await self.predict_batch([input_data])
         return prediction_list[0] # Return the single prediction list
+    
+    def get_seq_len(self):
+        return self._seq_len
 
 
 def serve_model():
@@ -156,7 +159,7 @@ def serve_model():
         model_checkpoint_path=MODEL_CHECKPOINT_PATH # Explicitly pass the path
     )
     
-    serve.run(dlinear_deployment, name="dlinear-ett-server", route_prefix="/predict_dlinear")
+    serve.run(dlinear_deployment, name=DEPLOYMENT_NAME, route_prefix="/predict_dlinear")
     print(f"DLinear model deployment '{dlinear_deployment.name}' is running at route prefix '/predict_dlinear'")
     print(f"Test with: curl -X POST -H \"Content-Type: application/json\" -d '{{\"series\": [{', '.join(['0.5']*seq_len_for_curl)}]}}' http://127.0.0.1:8000/predict_dlinear")
 
@@ -168,7 +171,13 @@ def test_serve():
     # --- Example Client Code (can be run in a separate script or after serve starts) ---
     # This part is for demonstration and testing the running service.
     # Generate a sample input sequence of the correct length
-    sample_input_series = [0.5 + np.sin(i / 10) for i in range(seq_len_for_test)]
+
+
+    dlinear_deployment = serve.get_deployment(DEPLOYMENT_NAME)
+    seq_len = dlinear_deployment.get_seq_len()
+
+
+    sample_input_series = [0.5 + np.sin(i / 10) for i in range(seq_len)]
     sample_request_body = {"series": sample_input_series}
 
     # The URL for the deployed model
