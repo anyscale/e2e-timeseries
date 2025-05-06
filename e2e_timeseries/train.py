@@ -154,6 +154,7 @@ def train_loop_per_worker(config: dict):
                         "epoch": epoch,
                         "model_state_dict": model.module.state_dict() if args.use_gpu else model.state_dict(),
                         "optimizer_state_dict": model_optim.state_dict(),
+                        "train_args": vars(args)
                     },
                     os.path.join(temp_checkpoint_dir, "checkpoint.pt"),
                 )
