@@ -100,10 +100,13 @@ class DLinearModelServe:
         except Exception as e:
             return {"error": f"Failed to parse JSON request: {str(e)}"}
 
-        prediction_list = await self.predict_batch([input_data])
-        # If predict_batch can return an empty list or error indicators, handle them.
-        # For now, assuming it returns a list with one item for a single input.
-        return prediction_list[0] if prediction_list else {"error": "Prediction failed for the input."}
+        # Pass the single dictionary input_data to predict_batch.
+        # Ray Serve's @serve.batch will handle collecting these into a batch for predict_batch.
+        # The await call will return the specific result for this input_data.
+        single_prediction_output = await self.predict_batch(input_data)
+
+        # single_prediction_output is expected to be a list[float] (the prediction for one series)
+        return single_prediction_output
 
     # Expose get_seq_len as a GET endpoint
     @app.get("/seq_len")
@@ -143,71 +146,38 @@ def test_serve():
 
     # Create a few sample requests from the loaded data
     # Ensure that we have enough data for multiple distinct samples if possible
-    num_samples_to_create = 3
+    num_samples_to_create = 1
     sample_requests = []
     for i in range(num_samples_to_create):
         start_index = i * seq_len
         end_index = start_index + seq_len
-        if end_index <= len(ot_series):
-            sample_input_series = ot_series[start_index:end_index]
-            sample_requests.append({"series": sample_input_series})
-        else:
-            # If not enough unique data for all samples, we can repeat the first one or handle as an error
-            # For now, let's break if we can't form a new complete sequence
-            if i == 0:  # If even the first sample cannot be created
-                print(f"Error: Not enough data in 'OT' column ({len(ot_series)}) to create even one sample of length {seq_len}.")
-                return
-            print(f"Warning: Not enough data for {num_samples_to_create} unique samples. Created {i} samples.")
-            break
+        sample_input_series = ot_series[start_index:end_index]
+        sample_requests.append({"series": sample_input_series})
 
     # Use the first sample for the single synchronous request
     sample_request_body = sample_requests[0]
 
     print("\n--- Sending Single Synchronous Request to /predict endpoint ---")
-    try:
-        response = requests.post(predict_url, json=sample_request_body)
-        response.raise_for_status()  # Raise an exception for HTTP errors
-        prediction = response.json()
-        print(f"Prediction (first {min(5, len(prediction))} values): {prediction[:5] if isinstance(prediction, list) else prediction}")
-        print(f"Full prediction length: {len(prediction) if isinstance(prediction, list) else 'N/A (error likely)'}")
-    except requests.exceptions.RequestException as e:
-        print(f"Error sending request to {predict_url}: {e}")
-        if hasattr(e, "response") and e.response is not None:
-            print(f"Response content: {e.response.text}")
-
-    # --- Example for Batch Asynchronous Requests (using aiohttp) ---
-    # This also needs to be run against an active serve deployment.
+    response = requests.post(predict_url, json=sample_request_body)
+    response.raise_for_status()  # Raise an exception for HTTP errors
+    prediction = response.json()
+    print(f"Prediction (first {min(5, len(prediction))} values): {prediction[:5] if isinstance(prediction, list) else prediction}")
+    print(f"Full prediction length: {len(prediction) if isinstance(prediction, list) else 'N/A (error likely)'}")
 
     print("\n--- Sending Batch Asynchronous Requests to /predict endpoint ---")
-    # Use all created samples for batch requests
-    # sample_input_list = [sample_request_body] * 5  # Batch of 5 identical requests
-    sample_input_list = sample_requests  # Use the new samples
+    sample_input_list = [sample_request_body] * 100  # Use identical requests
 
     async def fetch(session, url, data):
         async with session.post(url, json=data) as response:
-            if response.status != 200:
-                print(f"Error from server ({url}): {response.status}, {await response.text()}")
-                return None
             return await response.json()
 
     async def fetch_all_concurrently(requests_to_send: list):
         async with aiohttp.ClientSession() as session:
-            # Use the correct predict_url for async requests
             tasks = [fetch(session, predict_url, input_data) for input_data in requests_to_send]
             responses = await asyncio.gather(*tasks, return_exceptions=True)
             return responses
 
-    async def run_async_requests():
-        responses = await fetch_all_concurrently(sample_input_list)
-        for i, res in enumerate(responses):
-            if isinstance(res, Exception):
-                print(f"Request {i + 1} failed: {res}")
-            elif res is None:
-                print(f"Request {i + 1} returned no response (check server logs).")
-            else:
-                print(f"Response {i + 1} (first {min(5, len(res))} values): {res[:5] if isinstance(res, list) else res}")
-
-    asyncio.run(run_async_requests())
+    asyncio.run(fetch_all_concurrently(sample_input_list))
 
 
 if __name__ == "__main__":
