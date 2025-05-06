@@ -96,6 +96,8 @@ class Dataset_ETT_hour(Dataset):
         self.data_y = data[border1:border2]
 
     def __getitem__(self, index):
+        # Check if index is out of bounds
+        # Remove once https://github.com/ray-project/ray/pull/52804 is merged
         max_valid_index = len(self.data_x) - self.seq_len - self.pred_len
         if index > max_valid_index:
              raise IndexError(f"Attempted to access index {index}, but maximum valid index is {max_valid_index}")
