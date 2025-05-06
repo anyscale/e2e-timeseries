@@ -7,7 +7,6 @@ import os
 import numpy as np
 import ray
 import torch
-import pandas as pd
 
 os.environ["RAY_TRAIN_V2_ENABLED"] = "1"
 
@@ -119,7 +118,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    args.train_only = False  # Important: Load test data
+    args.train_only = False  # Important: Load test subset
 
     ray.init(ignore_reinit_error=True)
 
@@ -128,9 +127,6 @@ def main():
     # Note: We set train_only=False and don't need smoke_test here
     _loader, ds = data_provider(args, flag='test')
 
-    print(f"Length of ds via len(): {len(ds)}") # Expect 2784 due to workaround
-    #print(f"Length of _loader via len(): {len(_loader)}") # Expect ceil(2784 / batch_size)
-
     # Convert DataLoader to Ray Dataset
     # The DataLoader yields tuples (x, y)
     # Ray Data automatically converts this into records like {"item": [x, y]}
@@ -138,15 +134,10 @@ def main():
 
     # Preprocess items into the expected input format for the Predictor
     def preprocess_items(item):
-        # FIXME
-        assert len(item["item"][0]) > 0, f"x is empty: {item['item'][0]} \n\n {item}"
-        assert len(item["item"][1]) > 0, f"y is empty: {item['item'][1]} \n\n {item}"
         return {"x": np.array(item["item"][0]), "y": np.array(item["item"][1])}
     
     ds = ds.map(preprocess_items)
 
-    print("Starting inference...")
-    # Perform inference using map_batches with the Predictor class
     ds = ds.map_batches(
         Predictor,
         fn_constructor_kwargs={"checkpoint_path": args.checkpoint_path, "args": args},
@@ -156,34 +147,25 @@ def main():
         batch_format="numpy"
     )
 
-    # Collect all predictions and targets from the distributed dataset
-    # This might be memory intensive for very large datasets.
-    # Consider alternatives like custom aggregation if memory becomes an issue.
+    # Trigger the lazy execution of the pipeline
     all_results = ds.take_all()
-
-    if not all_results:
-        print("Error: No results were collected from the prediction dataset.")
-        return
 
     # Concatenate predictions and targets from all batches
     all_predictions = np.concatenate([item['predictions'] for item in all_results], axis=0)
     all_targets = np.concatenate([item['targets'] for item in all_results], axis=0)
 
-    print(f"Collected predictions shape: {all_predictions.shape}")
-    print(f"Collected targets shape: {all_targets.shape}")
-
     # Calculate final metrics on the complete dataset
     mae, mse, rmse, mape, mspe, rse = metric(all_predictions, all_targets)
 
     print("\n--- Test Results ---")
-    print(f"MSE: {mse:.4f}")
-    print(f"MAE: {mae:.4f}")
-    print(f"RMSE: {rmse:.4f}")
-    print(f"MAPE: {mape:.4f}")
-    print(f"MSPE: {mspe:.4f}")
-    print(f"RSE: {rse:.4f}")
+    print(f"MSE: {mse:.3f}")
+    print(f"MAE: {mae:.3f}")
+    print(f"RMSE: {rmse:.3f}")
+    print(f"MAPE: {mape:.3f}")
+    print(f"MSPE: {mspe:.3f}")
+    print(f"RSE: {rse:.3f}")
 
-    print("\nOffline inference finished.")
+    print("\nOffline inference finished!")
 
 if __name__ == "__main__":
     main()
