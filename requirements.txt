@@ -3,4 +3,5 @@ matplotlib
 pandas
 scikit-learn
 torch==2.7.0
-ray[train] == 2.45.0
+ray[data, train, serve] == 2.45.0
+aiohttp
