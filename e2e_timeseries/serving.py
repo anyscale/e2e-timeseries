@@ -47,35 +47,45 @@ class DLinearModelServe:
         """
         Expects a list of dictionaries, each with a "series" key.
         e.g., [{"series": [0.1, 0.2, ..., 0.N]}, {"series": [0.3, 0.4, ..., 0.M]}]
-        where N and M must be equal to self.args.seq_len.
+        Each series is a 1D list of floats/integers.
         """
-        print(f"Processing batch of size: {len(input_data_list)}")
 
-        batch_series = []
+        # FIXME simplify calls so that we don't need to unpack the dicts
+        valid_series_list = []
         for item in input_data_list:
             series = item.get("series")
-            if series is None or len(series) != self.args["seq_len"]:
-                print(f"Warning: Skipping invalid input. Expected series of length {self.args['seq_len']}, got {len(series) if series else 'None'}")
+            valid_series_list.append(series)
 
-            batch_series.append(series)
+        # Convert list of 1D series to a 2D numpy array (batch_size, seq_len)
+        batch_x_np = np.array(valid_series_list, dtype=np.float32)
 
-        if not batch_series:
-            return []
-
-        batch_x_np = np.array(batch_series, dtype=np.float32)
-        if self.args["enc_in"] == 1 and batch_x_np.ndim == 2:  # (batch_size, seq_len)
-            batch_x_np = np.expand_dims(batch_x_np, axis=-1)  # -> (batch_size, seq_len, 1)
+        # DLinear model (and many time series models) expect input of shape:
+        # (batch_size, sequence_length, num_input_features).
+        # Since each "series" from the input request is a single sequence of values,
+        # we interpret it as corresponding to a single input feature channel.
+        # Thus, we reshape the (batch_size, seq_len) array to (batch_size, seq_len, 1).
+        if batch_x_np.ndim == 2:
+            batch_x_np = np.expand_dims(batch_x_np, axis=-1)
 
         batch_x = torch.from_numpy(batch_x_np).float().to(self.device)
 
         with torch.no_grad():
+            # model input expects: (batch_size, seq_len, features_in)
             outputs = self.model(batch_x)
+            # model output: (batch_size, pred_len, features_out)
 
+        # Slice to get the prediction length part of the output.
+        # The [:, :, :] part takes all output features.
+        # For 'S' (single-feature) forecasting, DLinear typically outputs 1 feature.
+        # For 'M' (multi-feature) forecasting, DLinear typically outputs multiple features.
         outputs = outputs[:, -self.args["pred_len"] :, :]
 
-        # Use self.args for features
-        if self.args["features"] == "S" and outputs.shape[-1] == 1:
-            outputs = outputs.squeeze(-1)
+        # If 'S' (single feature forecasting) and the model's output for that single
+        # feature has an explicit last dimension of 1, squeeze it.
+        # This makes the output a list of 1D series (list of lists of floats).
+        # This is consistent with offline_inference.py and typical expectations.
+        if self.args.get("features") == "S" and outputs.shape[-1] == 1:
+            outputs = outputs.squeeze(-1)  # Shape: (batch_size, pred_len)
 
         outputs_list = outputs.cpu().numpy().tolist()
         return outputs_list
@@ -144,18 +154,9 @@ def test_serve():
     df = pd.read_csv("e2e_timeseries/dataset/ETTh2.csv")
     ot_series = df["OT"].tolist()
 
-    # Create a few sample requests from the loaded data
-    # Ensure that we have enough data for multiple distinct samples if possible
-    num_samples_to_create = 1
-    sample_requests = []
-    for i in range(num_samples_to_create):
-        start_index = i * seq_len
-        end_index = start_index + seq_len
-        sample_input_series = ot_series[start_index:end_index]
-        sample_requests.append({"series": sample_input_series})
-
-    # Use the first sample for the single synchronous request
-    sample_request_body = sample_requests[0]
+    # Create a single sample request from the loaded data
+    sample_input_series = ot_series[:seq_len]
+    sample_request_body = {"series": sample_input_series}
 
     print("\n--- Sending Single Synchronous Request to /predict endpoint ---")
     response = requests.post(predict_url, json=sample_request_body)
