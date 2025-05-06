@@ -66,8 +66,36 @@ class Model(nn.Module):
             self.Linear_Trend = nn.Linear(self.seq_len, self.pred_len)
 
     def forward(self, x):
-        # x: [Batch, Input length, Channel]
-        x = x.unsqueeze(-1)  # Add channel dimension for compatibility
+        # x: [Batch, Input length, Channel] is the target shape for self.decompsition.
+        # Input x can be [Batch, Input length] (implies 1 channel) or [Batch, Input length, Channel].
+        # self.channels is derived from configs['enc_in'] during model initialization.
+
+        if x.ndim == 2:
+            # Input is [Batch, SeqLen]. This implies a single input channel.
+            # The model must have been configured for 1 channel (i.e., self.channels == 1).
+            if self.channels != 1:
+                raise ValueError(
+                    f"DLinear.Model received 2D input (shape {x.shape}), which implies 1 input channel, "
+                    f"but model was configured with self.channels={self.channels} (from enc_in)."
+                )
+            x = x.unsqueeze(-1)  # Convert to [Batch, SeqLen, 1]
+        elif x.ndim == 3:
+            # Input is [Batch, SeqLen, Channels_in].
+            # Channels_in must match the model's configured self.channels.
+            if x.shape[-1] != self.channels:
+                raise ValueError(
+                    f"DLinear.Model received 3D input with {x.shape[-1]} channels (shape {x.shape}), "
+                    f"but model was configured with self.channels={self.channels} (from enc_in)."
+                )
+            # x is already in the correct [Batch, SeqLen, Channels] format. No change needed.
+            # print(f"DLinear.Model.forward: Using 3D input as is: {x.shape}")
+            pass
+        else:
+            # Input tensor is neither 2D nor 3D, which is unexpected.
+            raise ValueError(
+                f"DLinear.Model input x must be 2D [Batch, SeqLen] or 3D [Batch, SeqLen, Channels]. Received {x.ndim}D tensor with shape {x.shape}."
+            )
+
         seasonal_init, trend_init = self.decompsition(x)
         seasonal_init, trend_init = seasonal_init.permute(0, 2, 1), trend_init.permute(0, 2, 1)
         if self.individual:
