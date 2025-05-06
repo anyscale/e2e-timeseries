@@ -44,14 +44,14 @@ class Model(nn.Module):
 
     def __init__(self, configs):
         super(Model, self).__init__()
-        self.seq_len = configs.seq_len
-        self.pred_len = configs.pred_len
+        self.seq_len = configs["seq_len"]
+        self.pred_len = configs["pred_len"]
 
         # Decompsition Kernel Size
         kernel_size = 25
         self.decompsition = series_decomp(kernel_size)
-        self.individual = configs.individual
-        self.channels = configs.enc_in
+        self.individual = configs["individual"]
+        self.channels = configs["enc_in"]
 
         if self.individual:
             self.Linear_Seasonal = nn.ModuleList()
@@ -61,20 +61,13 @@ class Model(nn.Module):
                 self.Linear_Seasonal.append(nn.Linear(self.seq_len, self.pred_len))
                 self.Linear_Trend.append(nn.Linear(self.seq_len, self.pred_len))
 
-                # Use this two lines if you want to visualize the weights
-                # self.Linear_Seasonal[i].weight = nn.Parameter((1/self.seq_len)*torch.ones([self.pred_len,self.seq_len]))
-                # self.Linear_Trend[i].weight = nn.Parameter((1/self.seq_len)*torch.ones([self.pred_len,self.seq_len]))
         else:
             self.Linear_Seasonal = nn.Linear(self.seq_len, self.pred_len)
             self.Linear_Trend = nn.Linear(self.seq_len, self.pred_len)
 
-            # Use this two lines if you want to visualize the weights
-            # self.Linear_Seasonal.weight = nn.Parameter((1/self.seq_len)*torch.ones([self.pred_len,self.seq_len]))
-            # self.Linear_Trend.weight = nn.Parameter((1/self.seq_len)*torch.ones([self.pred_len,self.seq_len]))
-
     def forward(self, x):
         # x: [Batch, Input length, Channel]
-        x = x.unsqueeze(-1) # Add channel dimension for compatibility
+        x = x.unsqueeze(-1)  # Add channel dimension for compatibility
         seasonal_init, trend_init = self.decompsition(x)
         seasonal_init, trend_init = seasonal_init.permute(0, 2, 1), trend_init.permute(0, 2, 1)
         if self.individual:

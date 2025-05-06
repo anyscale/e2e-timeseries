@@ -53,7 +53,6 @@ class DLinearModelServe:
         batch_series = []
         for item in input_data_list:
             series = item.get("series")
-            # Use self.args consistently
             if series is None or len(series) != self.args["seq_len"]:
                 print(f"Warning: Skipping invalid input. Expected series of length {self.args['seq_len']}, got {len(series) if series else 'None'}")
 
@@ -108,7 +107,7 @@ class DLinearModelServe:
     # Expose get_seq_len as a GET endpoint
     @app.get("/seq_len")
     async def get_sequence_length(self):
-        return {"seq_len": self._seq_len}
+        return {"seq_len": self.args["seq_len"]}
 
 
 def serve_model(model_checkpoint_path_arg: str):
@@ -201,8 +200,8 @@ def test_serve():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Serve DLinear model with Ray Serve.")
-    parser.add_argument("--model_checkpoint_path", type=str, required=True, help="Path to the model checkpoint file (.pt).")
+    parser.add_argument("--checkpoint_path", type=str, required=True, help="Path to the model checkpoint file (.pt).")
     args = parser.parse_args()
 
-    serve_model(args.model_checkpoint_path)
+    serve_model(args.checkpoint_path)
     test_serve()
