@@ -8,6 +8,7 @@ import os
 
 import aiohttp
 import numpy as np
+import pandas as pd
 import requests
 import torch
 from fastapi import FastAPI
@@ -130,28 +131,37 @@ def test_serve():
     seq_len_url = f"{base_url}/seq_len"
     predict_url = f"{base_url}/predict"
 
-    # Get seq_len from the new endpoint
-    seq_len = None
-    print("\n--- Fetching Sequence Length ---")
-    try:
-        response = requests.get(seq_len_url)
-        response.raise_for_status()
-        seq_len_data = response.json()
-        seq_len = seq_len_data.get("seq_len")
-        if seq_len is None:
-            print(f"Error: 'seq_len' not found in response from {seq_len_url}. Response: {seq_len_data}")
-            return  # Cannot proceed without seq_len
-        print(f"Successfully fetched seq_len: {seq_len}")
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching seq_len from {seq_len_url}: {e}")
-        if hasattr(e, "response") and e.response is not None:
-            print(f"Response content: {e.response.text}")
-        return  # Cannot proceed
+    # Get the proper seq_len for the deployed model
+    response = requests.get(seq_len_url)
+    response.raise_for_status()
+    seq_len_data = response.json()
+    seq_len = seq_len_data.get("seq_len")
 
-    # FIXME: load real data from the ETTh2 dataset
+    # Load sample data for demonstration purposes
+    df = pd.read_csv("e2e_timeseries/dataset/ETTh2.csv")
+    ot_series = df["OT"].tolist()
 
-    sample_input_series = [0.5 + np.sin(i / 10) for i in range(seq_len)]
-    sample_request_body = {"series": sample_input_series}
+    # Create a few sample requests from the loaded data
+    # Ensure that we have enough data for multiple distinct samples if possible
+    num_samples_to_create = 3
+    sample_requests = []
+    for i in range(num_samples_to_create):
+        start_index = i * seq_len
+        end_index = start_index + seq_len
+        if end_index <= len(ot_series):
+            sample_input_series = ot_series[start_index:end_index]
+            sample_requests.append({"series": sample_input_series})
+        else:
+            # If not enough unique data for all samples, we can repeat the first one or handle as an error
+            # For now, let's break if we can't form a new complete sequence
+            if i == 0:  # If even the first sample cannot be created
+                print(f"Error: Not enough data in 'OT' column ({len(ot_series)}) to create even one sample of length {seq_len}.")
+                return
+            print(f"Warning: Not enough data for {num_samples_to_create} unique samples. Created {i} samples.")
+            break
+
+    # Use the first sample for the single synchronous request
+    sample_request_body = sample_requests[0]
 
     print("\n--- Sending Single Synchronous Request to /predict endpoint ---")
     try:
@@ -169,7 +179,9 @@ def test_serve():
     # This also needs to be run against an active serve deployment.
 
     print("\n--- Sending Batch Asynchronous Requests to /predict endpoint ---")
-    sample_input_list = [sample_request_body] * 5  # Batch of 5 identical requests
+    # Use all created samples for batch requests
+    # sample_input_list = [sample_request_body] * 5  # Batch of 5 identical requests
+    sample_input_list = sample_requests  # Use the new samples
 
     async def fetch(session, url, data):
         async with session.post(url, json=data) as response:
