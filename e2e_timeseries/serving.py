@@ -3,6 +3,7 @@ Online serving script for DLinear model on ETT dataset using Ray Serve.
 """
 import asyncio
 import os
+import argparse
 
 import aiohttp
 import numpy as np
@@ -116,61 +117,24 @@ class DLinearModelServe:
         prediction_list = await self.predict_batch([input_data])
         return prediction_list[0] # Return the single prediction list
     
+    
     def get_seq_len(self):
         return self._seq_len
 
 
-def serve_model():
-    # --- Configuration for ETTh2 dataset and DLinear model ---
-    # FIXME make this a command line argument for the script
-    # MODEL_CHECKPOINT_PATH is now primarily handled within DLinearModelServe
-    # but we might need it here for the curl command example or if explicitly passing to bind.
-    # For simplicity, let's keep it defined here for the curl command example.
-    # The DLinearModelServe will use its internal logic (env var or default) if not passed to .bind()
-    # For this refactor, we will explicitly pass it to .bind() for clarity.
-    
-    # FIXME make this a command line argument for the script, or rely on env var for serve
-    MODEL_CHECKPOINT_PATH = os.environ.get(
-        "MODEL_CHECKPOINT_PATH",
-        "/Users/rdecal/src/ANYSCALE/e2e-timeseries/checkpoints/SmokeTest_DLinear_ETTh1_S_OT_20250506_145213/checkpoint_2025-05-06_14-52-30.603413/checkpoint.pt"
-    )
-
-    # To get seq_len for the curl command, we need to load train_args here too.
-    # This is a bit redundant but necessary for the example print unless we get it from the deployment.
-    # Alternatively, DLinearModelServe could expose self.args.seq_len after init.
-    # For now, quick load for the print statement.
-    seq_len_for_curl = 96 # Default
-    try:
-        # Temporary load just for the curl example's seq_len
-        # This avoids calling DLinearModelServe just for this printout if it fails early.
-        if os.path.exists(MODEL_CHECKPOINT_PATH):
-            checkpoint_for_curl = torch.load(MODEL_CHECKPOINT_PATH, map_location=torch.device("cpu"))
-            if "train_args" in checkpoint_for_curl and "seq_len" in checkpoint_for_curl["train_args"]:
-                seq_len_for_curl = checkpoint_for_curl["train_args"]["seq_len"]
-            else:
-                print("Warning: 'seq_len' not found in train_args for curl command example, using default 96.")
-        else:
-            print(f"Warning: Checkpoint for curl command example ('{MODEL_CHECKPOINT_PATH}') not found, using default seq_len 96 for curl example.")
-    except Exception as e:
-        print(f"Warning: Could not load checkpoint for curl command's seq_len from '{MODEL_CHECKPOINT_PATH}': {e}. Using default 96.")
-
-
+def serve_model(model_checkpoint_path_arg: str):
     dlinear_deployment = DLinearModelServe.bind(
-        model_checkpoint_path=MODEL_CHECKPOINT_PATH # Explicitly pass the path
+        model_checkpoint_path=model_checkpoint_path_arg
     )
     
     serve.run(dlinear_deployment, name=DEPLOYMENT_NAME, route_prefix="/predict_dlinear")
     print(f"DLinear model deployment '{dlinear_deployment.name}' is running at route prefix '/predict_dlinear'")
-    print(f"Test with: curl -X POST -H \"Content-Type: application/json\" -d '{{\"series\": [{', '.join(['0.5']*seq_len_for_curl)}]}}' http://127.0.0.1:8000/predict_dlinear")
-
 
     print("\nTo stop the server, press Ctrl+C in the terminal where it's running.")
 
 def test_serve():
     # FIXME: get a real datapoint from the ETTh2 dataset
     # --- Example Client Code (can be run in a separate script or after serve starts) ---
-    # This part is for demonstration and testing the running service.
-    # Generate a sample input sequence of the correct length
 
 
     dlinear_deployment = serve.get_deployment(DEPLOYMENT_NAME)
@@ -245,7 +209,15 @@ def test_serve():
 
 
 if __name__ == "__main__":
-    # FIXME: load model from cli args, then pass it to serve_model() and test_serve()
-    serve_model()
+    parser = argparse.ArgumentParser(description="Serve DLinear model with Ray Serve.")
+    parser.add_argument(
+        "--model_checkpoint_path",
+        type=str,
+        required=True,
+        help="Path to the model checkpoint file (.pt)."
+    )
+    args = parser.parse_args()
+
+    serve_model(args.model_checkpoint_path)
     test_serve()
 
