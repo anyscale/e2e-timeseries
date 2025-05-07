@@ -66,6 +66,11 @@ class Model(nn.Module):
             self.Linear_Trend = nn.Linear(self.seq_len, self.pred_len)
 
     def forward(self, x):
+        # DLinear model (and many time series models) expect input of shape:
+        # (batch_size, sequence_length, num_input_features).
+        # Since each "series" from the input request is a single sequence of values,
+        # we interpret it as corresponding to a single input feature channel.
+
         # x: [Batch, Input length, Channel] is the target shape for self.decompsition.
         # Input x can be [Batch, Input length] (implies 1 channel) or [Batch, Input length, Channel].
         # self.channels is derived from configs['enc_in'] during model initialization.

@@ -43,7 +43,7 @@ class DLinearModelServe:
         self.model.eval()
 
     @serve.batch(max_batch_size=32, batch_wait_timeout_s=0.1)
-    async def predict_batch(self, input_data_list: list[list[float]]) -> list[list[float]]:
+    async def predict_batch(self, batch_x: list[list[float]]) -> list[list[float]]:
         """
         Expects a list of series, where each series is a 1D list of floats/integers.
         e.g., [[0.1, 0.2, ..., 0.N], [0.3, 0.4, ..., 0.M]]
@@ -51,20 +51,10 @@ class DLinearModelServe:
         """
 
         # Convert list of 1D series to a 2D numpy array (batch_size, seq_len)
-        batch_x_np = np.array(input_data_list, dtype=np.float32)
-
-        # DLinear model (and many time series models) expect input of shape:
-        # (batch_size, sequence_length, num_input_features).
-        # Since each "series" from the input request is a single sequence of values,
-        # we interpret it as corresponding to a single input feature channel.
-        # Thus, we reshape the (batch_size, seq_len) array to (batch_size, seq_len, 1).
-        if batch_x_np.ndim == 2:
-            batch_x_np = np.expand_dims(batch_x_np, axis=-1)
-
-        batch_x = torch.from_numpy(batch_x_np).float().to(self.device)
+        batch_x = np.array(batch_x, dtype=np.float32)
+        batch_x = torch.from_numpy(batch_x).float().to(self.device)
 
         with torch.no_grad():
-            # model input expects: (batch_size, seq_len, features_in)
             outputs = self.model(batch_x)
             # model output: (batch_size, pred_len, features_out)
 
