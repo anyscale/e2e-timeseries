@@ -28,7 +28,7 @@ class Predictor:
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
         self.model.load_state_dict(checkpoint["model_state_dict"])
         self.model.to(self.device)
-        self.model.eval()  # Set model to evaluation mode
+        self.model.eval()
 
     def __call__(self, batch: dict[str, np.ndarray]) -> dict:
         """Process a batch of data for inference (numpy batch format)."""
@@ -114,7 +114,7 @@ def parse_args():
 
 def main():
     config = parse_args()
-    config["train_only"] = False  # Important: Load test subset
+    config["train_only"] = False  # load test subset
 
     ray.init(ignore_reinit_error=True)
 
@@ -124,7 +124,7 @@ def main():
     ds = ds.map_batches(
         Predictor,
         fn_constructor_kwargs={"checkpoint_path": config["checkpoint_path"], "config": config},
-        batch_size=config["batch_size"],  # Process N samples per actor call
+        batch_size=config["batch_size"],
         concurrency=config["num_predictor_replicas"],
         num_gpus=config["num_gpus_per_worker"] if config["use_gpu"] else 0,
         batch_format="numpy",

@@ -4,15 +4,6 @@ from data_provider.data_loader import Dataset_ETT_hour
 
 
 def data_provider(config: dict, flag: str):
-    # Determine Data class based on flag
-    if flag in ["test", "val"]:
-        shuffle_flag = False
-    else:  # flag == 'train' or 'val'
-        shuffle_flag = True
-
-    train_only = config["train_only"]
-    smoke_test = config.get("smoke_test", False)
-
     data_set = Dataset_ETT_hour(
         root_path=config["root_path"],
         data_path=config["data_path"],
@@ -20,8 +11,8 @@ def data_provider(config: dict, flag: str):
         size=[config["seq_len"], config["label_len"], config["pred_len"]],
         features=config["features"],
         target=config["target"],
-        train_only=train_only,
-        smoke_test=smoke_test,
+        train_only=config["train_only"],
+        smoke_test=config.get("smoke_test", False),
     )
     print(f"{flag} subset size: {len(data_set)}")
 
@@ -39,7 +30,7 @@ def data_provider(config: dict, flag: str):
 
     ds = ds.map(preprocess_items)
 
-    if shuffle_flag:
+    if flag == "train":
         ds = ds.random_shuffle()
 
     return ds
