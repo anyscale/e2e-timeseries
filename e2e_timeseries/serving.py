@@ -43,21 +43,15 @@ class DLinearModelServe:
         self.model.eval()
 
     @serve.batch(max_batch_size=32, batch_wait_timeout_s=0.1)
-    async def predict_batch(self, input_data_list: list[dict]) -> list[list[float]]:
+    async def predict_batch(self, input_data_list: list[list[float]]) -> list[list[float]]:
         """
-        Expects a list of dictionaries, each with a "series" key.
-        e.g., [{"series": [0.1, 0.2, ..., 0.N]}, {"series": [0.3, 0.4, ..., 0.M]}]
+        Expects a list of series, where each series is a 1D list of floats/integers.
+        e.g., [[0.1, 0.2, ..., 0.N], [0.3, 0.4, ..., 0.M]]
         Each series is a 1D list of floats/integers.
         """
 
-        # FIXME simplify calls so that we don't need to unpack the dicts
-        valid_series_list = []
-        for item in input_data_list:
-            series = item.get("series")
-            valid_series_list.append(series)
-
         # Convert list of 1D series to a 2D numpy array (batch_size, seq_len)
-        batch_x_np = np.array(valid_series_list, dtype=np.float32)
+        batch_x_np = np.array(input_data_list, dtype=np.float32)
 
         # DLinear model (and many time series models) expect input of shape:
         # (batch_size, sequence_length, num_input_features).
@@ -93,24 +87,22 @@ class DLinearModelServe:
     @app.post("/predict")
     async def predict_endpoint(self, request: Request):
         """
-        Expects a JSON body with a "series" key.
-        e.g., {"series": [0.1, 0.2, ..., 0.N]}
+        Expects a JSON body which is a list of floats/integers.
+        e.g., [0.1, 0.2, ..., 0.N]
         where N must be equal to self.args.seq_len.
         """
         try:
             input_data = await request.json()
-            if not isinstance(input_data, dict) or "series" not in input_data:
-                return {"error": "Invalid input. JSON object with 'series' key expected."}
-            if not isinstance(input_data["series"], list):
-                return {"error": "Invalid input. 'series' must be a list."}
+            if not isinstance(input_data, list):
+                return {"error": "Invalid input. JSON list of numbers expected."}
             # Use self.args for seq_len
-            if len(input_data["series"]) != self.args["seq_len"]:
-                return {"error": f"Invalid series length. Expected {self.args['seq_len']}, got {len(input_data['series'])}."}
+            if len(input_data) != self.args["seq_len"]:
+                return {"error": f"Invalid series length. Expected {self.args['seq_len']}, got {len(input_data)}."}
 
         except Exception as e:
             return {"error": f"Failed to parse JSON request: {str(e)}"}
 
-        # Pass the single dictionary input_data to predict_batch.
+        # Pass the single list input_data, wrapped in another list, to predict_batch.
         # Ray Serve's @serve.batch will handle collecting these into a batch for predict_batch.
         # The await call will return the specific result for this input_data.
         single_prediction_output = await self.predict_batch(input_data)
@@ -156,7 +148,7 @@ def test_serve():
 
     # Create a single sample request from the loaded data
     sample_input_series = ot_series[:seq_len]
-    sample_request_body = {"series": sample_input_series}
+    sample_request_body = sample_input_series  # Simplified: directly use the list
 
     print("\n--- Sending Single Synchronous Request to /predict endpoint ---")
     response = requests.post(predict_url, json=sample_request_body)
@@ -166,7 +158,7 @@ def test_serve():
     print(f"Full prediction length: {len(prediction) if isinstance(prediction, list) else 'N/A (error likely)'}")
 
     print("\n--- Sending Batch Asynchronous Requests to /predict endpoint ---")
-    sample_input_list = [sample_request_body] * 100  # Use identical requests
+    sample_input_list = [sample_input_series] * 100  # Use identical requests
 
     async def fetch(session, url, data):
         async with session.post(url, json=data) as response:
