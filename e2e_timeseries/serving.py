@@ -142,14 +142,13 @@ def test_serve():
 
     # Create a single sample request from the loaded data
     sample_input_series = ot_series[:seq_len]
-    sample_request_body = sample_input_series  # Simplified: directly use the list
+    sample_request_body = sample_input_series
 
     print("\n--- Sending Single Synchronous Request to /predict endpoint ---")
     response = requests.post(predict_url, json=sample_request_body)
-    response.raise_for_status()  # Raise an exception for HTTP errors
+    response.raise_for_status()
     prediction = response.json()
-    print(f"Prediction (first {min(5, len(prediction))} values): {prediction[:5] if isinstance(prediction, list) else prediction}")
-    print(f"Full prediction length: {len(prediction) if isinstance(prediction, list) else 'N/A (error likely)'}")
+    print(f"Prediction (first 5 values): {prediction[:5]}")
 
     print("\n--- Sending Batch Asynchronous Requests to /predict endpoint ---")
     sample_input_list = [sample_input_series] * 100  # Use identical requests
