@@ -54,6 +54,11 @@ class DLinearModelServe:
         batch_x = np.array(batch_x, dtype=np.float32)
         batch_x = torch.from_numpy(batch_x).float().to(self.device)
 
+        # Ensure batch_x is 3D: (batch_size, seq_len, num_features)
+        # For univariate 'S' models, num_features will be 1.
+        if batch_x.ndim == 2:
+            batch_x = batch_x.unsqueeze(-1)
+
         with torch.no_grad():
             outputs = self.model(batch_x)
             # model output: (batch_size, pred_len, features_out)
@@ -67,8 +72,7 @@ class DLinearModelServe:
         # If 'S' (single feature forecasting) and the model's output for that single
         # feature has an explicit last dimension of 1, squeeze it.
         # This makes the output a list of 1D series (list of lists of floats).
-        # This is consistent with offline_inference.py and typical expectations.
-        if self.args.get("features") == "S" and outputs.shape[-1] == 1:
+        if outputs.shape[-1] == 1:
             outputs = outputs.squeeze(-1)  # Shape: (batch_size, pred_len)
 
         outputs_list = outputs.cpu().numpy().tolist()

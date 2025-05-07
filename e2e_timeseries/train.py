@@ -77,13 +77,13 @@ def train_loop_per_worker(config: dict):
                     outputs = model(batch_x)
                     f_dim = -1 if config["features"] == "MS" else 0
                     outputs = outputs[:, -config["pred_len"] :, f_dim:]
-                    batch_y_target = batch_y.unsqueeze(-1)[:, -config["pred_len"] :, f_dim:].to(device)
+                    batch_y_target = batch_y[:, -config["pred_len"] :, f_dim:].to(device)
                     loss = criterion(outputs, batch_y_target)
             else:
                 outputs = model(batch_x)
                 f_dim = -1 if config["features"] == "MS" else 0
                 outputs = outputs[:, -config["pred_len"] :, f_dim:]
-                batch_y_target = batch_y.unsqueeze(-1)[:, -config["pred_len"] :, f_dim:].to(device)
+                batch_y_target = batch_y[:, -config["pred_len"] :, f_dim:].to(device)
                 loss = criterion(outputs, batch_y_target)
 
             train_loss_epoch.append(loss.item())
@@ -125,7 +125,7 @@ def train_loop_per_worker(config: dict):
                     f_dim = -1 if config["features"] == "MS" else 0
                     outputs = outputs[:, -config["pred_len"] :, f_dim:]
                     # Prepare batch_y_target from the original batch_y
-                    batch_y_target = batch_y.unsqueeze(-1)[:, -config["pred_len"] :, f_dim:].to(device)
+                    batch_y_target = batch_y[:, -config["pred_len"] :, f_dim:].to(device)
 
                     all_preds.append(outputs.detach().cpu().numpy())
                     all_trues.append(batch_y_target.detach().cpu().numpy())

@@ -49,15 +49,10 @@ class Predictor:
         # Shape (N, label_len + pred_len)
         batch_y = batch["y"]
         # Shape (N, pred_len)
+        # TODO double check this. shouldnt it be [:, 0:self.config["pred_len"]] instead?
+        # why are we taking the last self.config["pred_len"] elements instead of the first?
         batch_y_target = batch_y[:, -self.config["pred_len"] :]
 
-        # Ensure shapes match for metric calculation (squeeze last dim if needed)
-        if self.config["features"] == "S" and outputs_np.shape[-1] == 1:
-            outputs_np = outputs_np.squeeze(-1)  # Shape (N, pred_len)
-        if self.config["features"] == "S" and batch_y_target.ndim == 3 and batch_y_target.shape[-1] == 1:
-            batch_y_target = batch_y_target.squeeze(-1)  # Shape (N, pred_len)
-
-        # Return numpy arrays
         return {"predictions": outputs_np, "targets": batch_y_target}
 
 
@@ -134,6 +129,16 @@ def main():
         num_gpus=config["num_gpus_per_worker"] if config["use_gpu"] else 0,
         batch_format="numpy",
     )
+
+    def postprocess_items(item: dict) -> dict:
+        # check if final dim is 1 and squeeze if so
+        if item["predictions"].shape[-1] == 1:
+            item["predictions"] = item["predictions"].squeeze(-1)
+        if item["targets"].shape[-1] == 1:
+            item["targets"] = item["targets"].squeeze(-1)
+        return item
+
+    ds = ds.map(postprocess_items)
 
     # Trigger the lazy execution of the pipeline
     all_results = ds.take_all()

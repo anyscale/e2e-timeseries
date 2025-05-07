@@ -100,7 +100,7 @@ class Dataset_ETT_hour(Dataset):
         # Remove once https://github.com/ray-project/ray/pull/52804 is merged
         max_valid_index = len(self.data_x) - self.seq_len - self.pred_len
         if index > max_valid_index:
-             raise IndexError(f"Attempted to access index {index}, but maximum valid index is {max_valid_index}")
+            raise IndexError(f"Attempted to access index {index}, but maximum valid index is {max_valid_index}")
 
         s_begin = index
         s_end = s_begin + self.seq_len
@@ -108,8 +108,8 @@ class Dataset_ETT_hour(Dataset):
         r_end = r_begin + self.label_len + self.pred_len
 
         # Turn into 1D numpy arrays
-        seq_x = self.data_x[s_begin:s_end].squeeze(-1)
-        seq_y = self.data_y[r_begin:r_end].squeeze(-1)
+        seq_x = self.data_x[s_begin:s_end]
+        seq_y = self.data_y[r_begin:r_end]
 
         assert len(seq_x) > 0, f"seq_x is empty at index {index}: {seq_x} \\n\\n {self.data_x[s_begin:s_end]}"
         assert len(seq_y) > 0, f"seq_y is empty at index {index}: {seq_y} \\n\\n {self.data_y[r_begin:r_end]}"
