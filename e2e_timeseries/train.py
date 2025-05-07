@@ -45,13 +45,9 @@ def train_loop_per_worker(config: dict):
     model.to(device)
 
     # === Get Data ===
-    train_loader, _train_ds = data_provider(config, flag="train")
+    train_ds = data_provider(config, flag="train")
     if not config["train_only"]:
-        val_loader, _val_ds = data_provider(config, flag="val")
-
-    train_loader = train.torch.prepare_data_loader(train_loader)
-    if not config["train_only"]:
-        val_loader = train.torch.prepare_data_loader(val_loader)
+        val_ds = data_provider(config, flag="val")
 
     # === Optimizer and Criterion ===
     model_optim = optim.Adam(model.parameters(), lr=config["learning_rate"])
@@ -68,10 +64,12 @@ def train_loop_per_worker(config: dict):
         train_loss_epoch = []
         epoch_start_time = time.time()
 
-        for i, (batch_x, batch_y) in enumerate(train_loader):
+        # Iterate over Ray Dataset batches. The dataset now yields dicts {'x': numpy_array, 'y': numpy_array}
+        # iter_torch_batches will convert these to Torch tensors and move to device.
+        for batch in train_ds.iter_torch_batches(batch_size=config["batch_size"], device=device, dtypes=torch.float32):
             model_optim.zero_grad()
-            batch_x = batch_x.float().to(device)
-            batch_y = batch_y.float().to(device)
+            batch_x = batch["x"]  # Already a tensor on the correct device
+            batch_y = batch["y"]  # Already a tensor on the correct device
 
             # Forward pass
             if config["use_amp"]:
@@ -115,8 +113,8 @@ def train_loop_per_worker(config: dict):
             all_preds = []
             all_trues = []
             with torch.no_grad():
-                for i, (batch_x, batch_y) in enumerate(val_loader):
-                    batch_x = batch_x.float().to(device)
+                for batch in val_ds.iter_torch_batches(batch_size=config["batch_size"], device=device, dtypes=torch.float32):
+                    batch_x, batch_y = batch["x"], batch["y"]
 
                     if config["use_amp"]:
                         with torch.amp.autocast("cuda"):
@@ -126,6 +124,7 @@ def train_loop_per_worker(config: dict):
 
                     f_dim = -1 if config["features"] == "MS" else 0
                     outputs = outputs[:, -config["pred_len"] :, f_dim:]
+                    # Prepare batch_y_target from the original batch_y
                     batch_y_target = batch_y.unsqueeze(-1)[:, -config["pred_len"] :, f_dim:].to(device)
 
                     all_preds.append(outputs.detach().cpu().numpy())
@@ -238,7 +237,10 @@ if __name__ == "__main__":
     args = parse_args()
 
     # === Ray Train Setup ===
-    ray.init()
+    if args.use_gpu:
+        ray.init(num_gpus=args.num_replicas)  # Ensure Ray is initialized with GPU access if needed
+    else:
+        ray.init()
 
     scaling_config = ScalingConfig(
         num_workers=args.num_replicas,
@@ -270,11 +272,20 @@ if __name__ == "__main__":
 
     # === Post-Training ===
     if result.best_checkpoints:
-        best_checkpoint = result.get_best_checkpoint(metric="val/loss" if not args.train_only else "train/loss", mode="min")
-        if best_checkpoint:
+        best_checkpoint_path = None
+        if not args.train_only and "val/loss" in result.metrics_dataframe:
+            best_checkpoint = result.get_best_checkpoint(metric="val/loss", mode="min")
+            if best_checkpoint:
+                best_checkpoint_path = best_checkpoint.path
+        elif "train/loss" in result.metrics_dataframe:  # Fallback or if train_only
+            best_checkpoint = result.get_best_checkpoint(metric="train/loss", mode="min")
+            if best_checkpoint:
+                best_checkpoint_path = best_checkpoint.path
+
+        if best_checkpoint_path:
             print("Best checkpoint found:")
-            print(f"  Directory: {best_checkpoint.path}")
+            print(f"  Directory: {best_checkpoint_path}")
         else:
-            print("Could not retrieve the best checkpoint.")
+            print("Could not retrieve the best checkpoint based on available metrics.")
     else:
         print("No checkpoints were saved during training.")

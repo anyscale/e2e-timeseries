@@ -1,21 +1,17 @@
+import numpy as np
+import ray
 from data_provider.data_loader import Dataset_ETT_hour
-from torch.utils.data import DataLoader
 
 
 def data_provider(config: dict, flag: str):
     # Determine Data class based on flag
     if flag in ["test", "val"]:
         shuffle_flag = False
-        drop_last = False
     else:  # flag == 'train' or 'val'
         shuffle_flag = True
 
     train_only = config["train_only"]
-    smoke_test = config["smoke_test"] if "smoke_test" in config else False
-
-    # Override drop_last for smoke test to prevent data loss
-    if smoke_test:
-        drop_last = False
+    smoke_test = config.get("smoke_test", False)
 
     data_set = Dataset_ETT_hour(
         root_path=config["root_path"],
@@ -29,8 +25,18 @@ def data_provider(config: dict, flag: str):
     )
     print(f"{flag} subset size: {len(data_set)}")
 
-    data_loader = DataLoader(
-        data_set, batch_size=config["batch_size"], shuffle=shuffle_flag, num_workers=config["num_data_workers"], drop_last=drop_last
-    )
-    assert len(data_loader) > 0
-    return data_loader, data_set
+    # Convert PyTorch Dataset to Ray Dataset
+    ds = ray.data.from_torch(data_set)
+
+    def preprocess_items(item: dict) -> dict:
+        # ray.data.from_torch wraps items in a dictionary {'item': (tensor_x, tensor_y)}
+        # We want to convert these to numpy arrays and assign to 'x' and 'y' keys.
+        # The tensors from PyTorch Dataset are already on CPU.
+        return {"x": np.array(item["item"][0]), "y": np.array(item["item"][1])}
+
+    ds = ds.map(preprocess_items)
+
+    if shuffle_flag:
+        ds = ds.random_shuffle()
+
+    return ds

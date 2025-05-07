@@ -124,20 +124,7 @@ def main():
     ray.init(ignore_reinit_error=True)
 
     print("Loading test data...")
-    # Use data_provider to get a DataLoader for the 'test' set
-    # Note: We set train_only=False and don't need smoke_test here
-    _loader, ds = data_provider(config, flag="test")
-
-    # Convert DataLoader to Ray Dataset
-    # The DataLoader yields tuples (x, y)
-    # Ray Data automatically converts this into records like {"item": [x, y]}
-    ds = ray.data.from_torch(ds)  # Always pass the dataset, not the dataloader
-
-    # Preprocess items into the expected input format for the Predictor
-    def preprocess_items(item):
-        return {"x": np.array(item["item"][0]), "y": np.array(item["item"][1])}
-
-    ds = ds.map(preprocess_items)
+    ds = data_provider(config, flag="test")
 
     ds = ds.map_batches(
         Predictor,
