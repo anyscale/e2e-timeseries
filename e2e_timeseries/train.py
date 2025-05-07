@@ -39,6 +39,25 @@ def train_loop_per_worker(config: dict):
     else:
         device = torch.device("cpu")
 
+    def _get_processed_outputs_and_targets(raw_outputs, batch_y_on_device, config_inner):
+        """
+        Processes model outputs and batch_y by slicing them to the prediction length
+        and selecting the appropriate features based on the task type.
+        Assumes batch_y_on_device is already on the correct device.
+        """
+        pred_len = config_inner["pred_len"]
+        f_dim_start_index = -1 if config_inner["features"] == "MS" else 0
+
+        # Slice for prediction length first
+        outputs_pred_len = raw_outputs[:, -pred_len:, :]
+        batch_y_pred_len = batch_y_on_device[:, -pred_len:, :]
+
+        # Then slice for features
+        final_outputs = outputs_pred_len[:, :, f_dim_start_index:]
+        final_batch_y_target = batch_y_pred_len[:, :, f_dim_start_index:]
+
+        return final_outputs, final_batch_y_target
+
     # === Build Model ===
     model = DLinear.Model(config).float()
     model = train.torch.prepare_model(model)
@@ -74,16 +93,12 @@ def train_loop_per_worker(config: dict):
             # Forward pass
             if config["use_amp"]:
                 with torch.amp.autocast("cuda"):
-                    outputs = model(batch_x)
-                    f_dim = -1 if config["features"] == "MS" else 0
-                    outputs = outputs[:, -config["pred_len"] :, f_dim:]
-                    batch_y_target = batch_y[:, -config["pred_len"] :, f_dim:].to(device)
+                    raw_outputs = model(batch_x)
+                    outputs, batch_y_target = _get_processed_outputs_and_targets(raw_outputs, batch_y, config)
                     loss = criterion(outputs, batch_y_target)
             else:
-                outputs = model(batch_x)
-                f_dim = -1 if config["features"] == "MS" else 0
-                outputs = outputs[:, -config["pred_len"] :, f_dim:]
-                batch_y_target = batch_y[:, -config["pred_len"] :, f_dim:].to(device)
+                raw_outputs = model(batch_x)
+                outputs, batch_y_target = _get_processed_outputs_and_targets(raw_outputs, batch_y, config)
                 loss = criterion(outputs, batch_y_target)
 
             train_loss_epoch.append(loss.item())
@@ -118,14 +133,11 @@ def train_loop_per_worker(config: dict):
 
                     if config["use_amp"]:
                         with torch.amp.autocast("cuda"):
-                            outputs = model(batch_x)
+                            raw_outputs = model(batch_x)
                     else:
-                        outputs = model(batch_x)
+                        raw_outputs = model(batch_x)
 
-                    f_dim = -1 if config["features"] == "MS" else 0
-                    outputs = outputs[:, -config["pred_len"] :, f_dim:]
-                    # Prepare batch_y_target from the original batch_y
-                    batch_y_target = batch_y[:, -config["pred_len"] :, f_dim:].to(device)
+                    outputs, batch_y_target = _get_processed_outputs_and_targets(raw_outputs, batch_y, config)
 
                     all_preds.append(outputs.detach().cpu().numpy())
                     all_trues.append(batch_y_target.detach().cpu().numpy())
