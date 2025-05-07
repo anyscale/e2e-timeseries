@@ -28,43 +28,42 @@ warnings.filterwarnings("ignore")
 
 def train_loop_per_worker(config: dict):
     """Main training loop adapted for Ray Train workers."""
-    args = argparse.Namespace(**config)  # Convert dict back to Namespace for compatibility
 
-    fix_seed = args.fix_seed if hasattr(args, "fix_seed") else 2021
+    fix_seed = config["fix_seed"] if "fix_seed" in config else 2021
     random.seed(fix_seed)
     torch.manual_seed(fix_seed)
     np.random.seed(fix_seed)
 
-    if args.use_gpu:
+    if config["use_gpu"]:
         device = train.torch.get_device()
     else:
         device = torch.device("cpu")
 
     # === Build Model ===
-    model = DLinear.Model(args).float()
+    model = DLinear.Model(config).float()
     model = train.torch.prepare_model(model)
     model.to(device)
 
     # === Get Data ===
-    train_loader, _train_ds = data_provider(args, flag="train")
-    if not args.train_only:
-        val_loader, _val_ds = data_provider(args, flag="val")
+    train_loader, _train_ds = data_provider(config, flag="train")
+    if not config["train_only"]:
+        val_loader, _val_ds = data_provider(config, flag="val")
 
     train_loader = train.torch.prepare_data_loader(train_loader)
-    if not args.train_only:
+    if not config["train_only"]:
         val_loader = train.torch.prepare_data_loader(val_loader)
 
     # === Optimizer and Criterion ===
-    model_optim = optim.Adam(model.parameters(), lr=args.learning_rate)
+    model_optim = optim.Adam(model.parameters(), lr=config["learning_rate"])
     criterion = nn.MSELoss()
 
     # === AMP Scaler ===
     scaler = None
-    if args.use_amp:
+    if config["use_amp"]:
         scaler = torch.amp.GradScaler("cuda")
 
     # === Training Loop ===
-    for epoch in range(args.train_epochs):
+    for epoch in range(config["train_epochs"]):
         model.train()
         train_loss_epoch = []
         epoch_start_time = time.time()
@@ -75,24 +74,24 @@ def train_loop_per_worker(config: dict):
             batch_y = batch_y.float().to(device)
 
             # Forward pass
-            if args.use_amp:
+            if config["use_amp"]:
                 with torch.amp.autocast("cuda"):
                     outputs = model(batch_x)
-                    f_dim = -1 if args.features == "MS" else 0
-                    outputs = outputs[:, -args.pred_len :, f_dim:]
-                    batch_y_target = batch_y.unsqueeze(-1)[:, -args.pred_len :, f_dim:].to(device)
+                    f_dim = -1 if config["features"] == "MS" else 0
+                    outputs = outputs[:, -config["pred_len"] :, f_dim:]
+                    batch_y_target = batch_y.unsqueeze(-1)[:, -config["pred_len"] :, f_dim:].to(device)
                     loss = criterion(outputs, batch_y_target)
             else:
                 outputs = model(batch_x)
-                f_dim = -1 if args.features == "MS" else 0
-                outputs = outputs[:, -args.pred_len :, f_dim:]
-                batch_y_target = batch_y.unsqueeze(-1)[:, -args.pred_len :, f_dim:].to(device)
+                f_dim = -1 if config["features"] == "MS" else 0
+                outputs = outputs[:, -config["pred_len"] :, f_dim:]
+                batch_y_target = batch_y.unsqueeze(-1)[:, -config["pred_len"] :, f_dim:].to(device)
                 loss = criterion(outputs, batch_y_target)
 
             train_loss_epoch.append(loss.item())
 
             # Backward pass
-            if args.use_amp:
+            if config["use_amp"]:
                 scaler.scale(loss).backward()
                 scaler.step(model_optim)
                 scaler.update()
@@ -111,7 +110,7 @@ def train_loop_per_worker(config: dict):
         }
 
         # === Validation ===
-        if not args.train_only:
+        if not config["train_only"]:
             model.eval()
             all_preds = []
             all_trues = []
@@ -119,15 +118,15 @@ def train_loop_per_worker(config: dict):
                 for i, (batch_x, batch_y) in enumerate(val_loader):
                     batch_x = batch_x.float().to(device)
 
-                    if args.use_amp:
+                    if config["use_amp"]:
                         with torch.amp.autocast("cuda"):
                             outputs = model(batch_x)
                     else:
                         outputs = model(batch_x)
 
-                    f_dim = -1 if args.features == "MS" else 0
-                    outputs = outputs[:, -args.pred_len :, f_dim:]
-                    batch_y_target = batch_y.unsqueeze(-1)[:, -args.pred_len :, f_dim:].to(device)
+                    f_dim = -1 if config["features"] == "MS" else 0
+                    outputs = outputs[:, -config["pred_len"] :, f_dim:]
+                    batch_y_target = batch_y.unsqueeze(-1)[:, -config["pred_len"] :, f_dim:].to(device)
 
                     all_preds.append(outputs.detach().cpu().numpy())
                     all_trues.append(batch_y_target.detach().cpu().numpy())
@@ -152,9 +151,9 @@ def train_loop_per_worker(config: dict):
                 torch.save(
                     {
                         "epoch": epoch,
-                        "model_state_dict": model.module.state_dict() if args.use_gpu else model.state_dict(),
+                        "model_state_dict": model.module.state_dict() if config["use_gpu"] else model.state_dict(),
                         "optimizer_state_dict": model_optim.state_dict(),
-                        "train_args": vars(args)
+                        "train_args": config,
                     },
                     os.path.join(temp_checkpoint_dir, "checkpoint.pt"),
                 )
@@ -163,7 +162,7 @@ def train_loop_per_worker(config: dict):
         else:
             train.report(metrics=results_dict, checkpoint=None)
 
-        adjust_learning_rate(model_optim, epoch + 1, args)
+        adjust_learning_rate(model_optim, epoch + 1, config)
 
 
 def parse_args():
