@@ -1,39 +1,36 @@
+import numpy as np
+import ray
 from data_provider.data_loader import Dataset_ETT_hour
-from torch.utils.data import DataLoader
 
 
-def data_provider(args, flag):
-    # Determine Data class based on flag
-    if flag == "test":
-        Data = Dataset_ETT_hour
-        batch_size = args.batch_size
-        shuffle_flag = False
-        drop_last = False
-    else:  # flag == 'train' or 'val'
-        Data = Dataset_ETT_hour
-        batch_size = args.batch_size
-        shuffle_flag = True
-        drop_last = True
-
-    train_only = args.train_only
-    smoke_test = args.smoke_test if hasattr(args, "smoke_test") else False
-
-    # Override drop_last for smoke test to prevent data loss
-    if smoke_test:
-        drop_last = False
-
-    data_set = Data(
-        root_path=args.root_path,
-        data_path=args.data_path,
+def data_provider(config: dict, flag: str):
+    data_set = Dataset_ETT_hour(
+        root_path=config["root_path"],
+        data_path=config["data_path"],
         flag=flag,
-        size=[args.seq_len, args.label_len, args.pred_len],
-        features=args.features,
-        target=args.target,
-        train_only=train_only,
-        smoke_test=smoke_test,
+        size=[config["seq_len"], config["label_len"], config["pred_len"]],
+        features=config["features"],
+        target=config["target"],
+        train_only=config["train_only"],
+        smoke_test=config.get("smoke_test", False),
     )
-    print(flag, len(data_set))
+    print(f"{flag} subset size: {len(data_set)}")
 
-    data_loader = DataLoader(data_set, batch_size=batch_size, shuffle=shuffle_flag, num_workers=args.num_data_workers, drop_last=drop_last)
-    assert len(data_loader) > 0
-    return data_loader
+    # Convert PyTorch Dataset to Ray Dataset
+    # Note: this will print `ArrowConversionError: Error converting data to Arrow` due to
+    # the data having an extra feature dimension. However, Ray will fall-back to using
+    # pickle to store the data and continue without issue.
+    ds = ray.data.from_torch(data_set)
+
+    def preprocess_items(item: dict) -> dict:
+        # ray.data.from_torch wraps items in a dictionary {'item': (tensor_x, tensor_y)}
+        # We want to convert these to numpy arrays and assign to 'x' and 'y' keys.
+        # The tensors from PyTorch Dataset are already on CPU.
+        return {"x": np.array(item["item"][0]), "y": np.array(item["item"][1])}
+
+    ds = ds.map(preprocess_items)
+
+    if flag == "train":
+        ds = ds.random_shuffle()
+
+    return ds

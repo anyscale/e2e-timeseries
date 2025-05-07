@@ -28,71 +28,83 @@ warnings.filterwarnings("ignore")
 
 def train_loop_per_worker(config: dict):
     """Main training loop adapted for Ray Train workers."""
-    args = argparse.Namespace(**config)  # Convert dict back to Namespace for compatibility
 
-    fix_seed = args.fix_seed if hasattr(args, "fix_seed") else 2021
+    fix_seed = config["fix_seed"] if "fix_seed" in config else 2021
     random.seed(fix_seed)
     torch.manual_seed(fix_seed)
     np.random.seed(fix_seed)
 
-    if args.use_gpu:
+    if config["use_gpu"]:
         device = train.torch.get_device()
     else:
         device = torch.device("cpu")
 
+    def _get_processed_outputs_and_targets(raw_outputs, batch_y_on_device, config_inner):
+        """
+        Processes model outputs and batch_y by slicing them to the prediction length
+        and selecting the appropriate features based on the task type.
+        Assumes batch_y_on_device is already on the correct device.
+        """
+        pred_len = config_inner["pred_len"]
+        f_dim_start_index = -1 if config_inner["features"] == "MS" else 0
+
+        # Slice for prediction length first
+        outputs_pred_len = raw_outputs[:, -pred_len:, :]
+        batch_y_pred_len = batch_y_on_device[:, -pred_len:, :]
+
+        # Then slice for features
+        final_outputs = outputs_pred_len[:, :, f_dim_start_index:]
+        final_batch_y_target = batch_y_pred_len[:, :, f_dim_start_index:]
+
+        return final_outputs, final_batch_y_target
+
     # === Build Model ===
-    model = DLinear.Model(args).float()
+    model = DLinear.Model(config).float()
     model = train.torch.prepare_model(model)
     model.to(device)
 
     # === Get Data ===
-    train_loader = data_provider(args, flag="train")
-    if not args.train_only:
-        val_loader = data_provider(args, flag="val")
-
-    train_loader = train.torch.prepare_data_loader(train_loader)
-    if not args.train_only:
-        val_loader = train.torch.prepare_data_loader(val_loader)
+    train_ds = data_provider(config, flag="train")
+    if not config["train_only"]:
+        val_ds = data_provider(config, flag="val")
 
     # === Optimizer and Criterion ===
-    model_optim = optim.Adam(model.parameters(), lr=args.learning_rate)
+    model_optim = optim.Adam(model.parameters(), lr=config["learning_rate"])
     criterion = nn.MSELoss()
 
     # === AMP Scaler ===
     scaler = None
-    if args.use_amp:
+    if config["use_amp"]:
         scaler = torch.amp.GradScaler("cuda")
 
     # === Training Loop ===
-    for epoch in range(args.train_epochs):
+    for epoch in range(config["train_epochs"]):
         model.train()
         train_loss_epoch = []
         epoch_start_time = time.time()
 
-        for i, (batch_x, batch_y) in enumerate(train_loader):
+        # Iterate over Ray Dataset batches. The dataset now yields dicts {'x': numpy_array, 'y': numpy_array}
+        # iter_torch_batches will convert these to Torch tensors and move to device.
+        for batch in train_ds.iter_torch_batches(batch_size=config["batch_size"], device=device, dtypes=torch.float32):
             model_optim.zero_grad()
-            batch_x = batch_x.float().to(device)
-            batch_y = batch_y.float().to(device)
+            batch_x = batch["x"]  # Already a tensor on the correct device
+            batch_y = batch["y"]  # Already a tensor on the correct device
 
             # Forward pass
-            if args.use_amp:
+            if config["use_amp"]:
                 with torch.amp.autocast("cuda"):
-                    outputs = model(batch_x)
-                    f_dim = -1 if args.features == "MS" else 0
-                    outputs = outputs[:, -args.pred_len :, f_dim:]
-                    batch_y_target = batch_y[:, -args.pred_len :, f_dim:].to(device)
+                    raw_outputs = model(batch_x)
+                    outputs, batch_y_target = _get_processed_outputs_and_targets(raw_outputs, batch_y, config)
                     loss = criterion(outputs, batch_y_target)
             else:
-                outputs = model(batch_x)
-                f_dim = -1 if args.features == "MS" else 0
-                outputs = outputs[:, -args.pred_len :, f_dim:]
-                batch_y_target = batch_y[:, -args.pred_len :, f_dim:].to(device)
+                raw_outputs = model(batch_x)
+                outputs, batch_y_target = _get_processed_outputs_and_targets(raw_outputs, batch_y, config)
                 loss = criterion(outputs, batch_y_target)
 
             train_loss_epoch.append(loss.item())
 
             # Backward pass
-            if args.use_amp:
+            if config["use_amp"]:
                 scaler.scale(loss).backward()
                 scaler.step(model_optim)
                 scaler.update()
@@ -111,24 +123,21 @@ def train_loop_per_worker(config: dict):
         }
 
         # === Validation ===
-        if not args.train_only:
+        if not config["train_only"]:
             model.eval()
             all_preds = []
             all_trues = []
             with torch.no_grad():
-                for i, (batch_x, batch_y) in enumerate(val_loader):
-                    batch_x = batch_x.float().to(device)
-                    batch_y = batch_y.float().to(device)
+                for batch in val_ds.iter_torch_batches(batch_size=config["batch_size"], device=device, dtypes=torch.float32):
+                    batch_x, batch_y = batch["x"], batch["y"]
 
-                    if args.use_amp:
+                    if config["use_amp"]:
                         with torch.amp.autocast("cuda"):
-                            outputs = model(batch_x)
+                            raw_outputs = model(batch_x)
                     else:
-                        outputs = model(batch_x)
+                        raw_outputs = model(batch_x)
 
-                    f_dim = -1 if args.features == "MS" else 0
-                    outputs = outputs[:, -args.pred_len :, f_dim:]
-                    batch_y_target = batch_y[:, -args.pred_len :, f_dim:].to(device)
+                    outputs, batch_y_target = _get_processed_outputs_and_targets(raw_outputs, batch_y, config)
 
                     all_preds.append(outputs.detach().cpu().numpy())
                     all_trues.append(batch_y_target.detach().cpu().numpy())
@@ -153,8 +162,9 @@ def train_loop_per_worker(config: dict):
                 torch.save(
                     {
                         "epoch": epoch,
-                        "model_state_dict": model.module.state_dict() if args.use_gpu else model.state_dict(),
+                        "model_state_dict": model.module.state_dict() if config["use_gpu"] else model.state_dict(),
                         "optimizer_state_dict": model_optim.state_dict(),
+                        "train_args": config,
                     },
                     os.path.join(temp_checkpoint_dir, "checkpoint.pt"),
                 )
@@ -163,7 +173,7 @@ def train_loop_per_worker(config: dict):
         else:
             train.report(metrics=results_dict, checkpoint=None)
 
-        adjust_learning_rate(model_optim, epoch + 1, args)
+        adjust_learning_rate(model_optim, epoch + 1, config)
 
 
 def parse_args():
@@ -183,7 +193,7 @@ def parse_args():
         help="forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate'",
     )
     parser.add_argument("--target", type=str, default="OT", help="target feature in S or MS task")
-    parser.add_argument("--checkpoints", type=str, default="./ray_checkpoints/", help="location for Ray Train checkpoints")
+    parser.add_argument("--checkpoints", type=str, default="./checkpoints/", help="location for Ray Train checkpoints")
 
     # forecasting task args
     parser.add_argument("--seq_len", type=int, default=96, help="input sequence length")
@@ -239,7 +249,10 @@ if __name__ == "__main__":
     args = parse_args()
 
     # === Ray Train Setup ===
-    ray.init()
+    if args.use_gpu:
+        ray.init(num_gpus=args.num_replicas)  # Ensure Ray is initialized with GPU access if needed
+    else:
+        ray.init()
 
     scaling_config = ScalingConfig(
         num_workers=args.num_replicas,
@@ -271,11 +284,20 @@ if __name__ == "__main__":
 
     # === Post-Training ===
     if result.best_checkpoints:
-        best_checkpoint = result.get_best_checkpoint(metric="val/loss" if not args.train_only else "train_loss", mode="min")
-        if best_checkpoint:
+        best_checkpoint_path = None
+        if not args.train_only and "val/loss" in result.metrics_dataframe:
+            best_checkpoint = result.get_best_checkpoint(metric="val/loss", mode="min")
+            if best_checkpoint:
+                best_checkpoint_path = best_checkpoint.path
+        elif "train/loss" in result.metrics_dataframe:  # Fallback or if train_only
+            best_checkpoint = result.get_best_checkpoint(metric="train/loss", mode="min")
+            if best_checkpoint:
+                best_checkpoint_path = best_checkpoint.path
+
+        if best_checkpoint_path:
             print("Best checkpoint found:")
-            print(f"  Directory: {best_checkpoint.path}")
+            print(f"  Directory: {best_checkpoint_path}")
         else:
-            print("Could not retrieve the best checkpoint.")
+            print("Could not retrieve the best checkpoint based on available metrics.")
     else:
         print("No checkpoints were saved during training.")
