@@ -21,7 +21,7 @@ class Predictor:
 
     def __init__(self, checkpoint_path: str, config: dict):
         self.config = config
-        self.device = torch.device("cuda" if torch.cuda.is_available() and self.config["use_gpu"] else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Load model from checkpoint
         self.model = DLinear.Model(config).float()
@@ -81,8 +81,6 @@ def parse_args():
 
     # Inference config
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size for inference")
-    parser.add_argument("--use_gpu", action="store_true", default=False, help="Use GPU for inference if available")
-    parser.add_argument("--num_gpus_per_worker", type=float, default=0.0, help="Number of GPUs to assign to each Predictor worker")
     parser.add_argument("--num_predictor_replicas", type=int, default=1, help="Number of Predictor replicas")
 
     args = parser.parse_args()
@@ -98,15 +96,11 @@ def parse_args():
     args.data_path = os.path.abspath(os.path.join(args.root_path, args.data_path))
     args.checkpoint_path = os.path.abspath(args.checkpoint_path)
 
-    if args.use_gpu and torch.cuda.is_available():
-        if args.num_gpus_per_worker == 0.0:
-            print("Warning: --use_gpu is set but --num_gpus_per_worker is 0. Defaulting to 1 GPU per worker.")
-            args.num_gpus_per_worker = 1.0
-    elif args.use_gpu and not torch.cuda.is_available():
-        print("Warning: --use_gpu requested but CUDA not available. Using CPU.")
-        args.use_gpu = False
-        args.num_gpus_per_worker = 0.0
-    else:  # Not using GPU
+    if torch.cuda.is_available():
+        print("CUDA is available, using GPU and setting num_gpus_per_worker to 1.0")
+        args.num_gpus_per_worker = 1.0
+    else:
+        print("CUDA is not available, using CPU and setting num_gpus_per_worker to 0.0")
         args.num_gpus_per_worker = 0.0
 
     return vars(args)
@@ -126,7 +120,7 @@ def main():
         fn_constructor_kwargs={"checkpoint_path": config["checkpoint_path"], "config": config},
         batch_size=config["batch_size"],
         concurrency=config["num_predictor_replicas"],
-        num_gpus=config["num_gpus_per_worker"] if config["use_gpu"] else 0,
+        num_gpus=config["num_gpus_per_worker"],
         batch_format="numpy",
     )
 
