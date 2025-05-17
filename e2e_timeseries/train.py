@@ -248,6 +248,7 @@ if __name__ == "__main__":
     ray.init()
 
     use_gpu = torch.cuda.is_available()
+    print(f"Using GPU: {use_gpu}")
     scaling_config = ScalingConfig(num_workers=args.num_replicas, use_gpu=use_gpu, resources_per_worker={"GPU": 1} if use_gpu else None)
 
     # Adjust run name for smoke test
