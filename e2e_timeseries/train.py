@@ -34,10 +34,8 @@ def train_loop_per_worker(config: dict):
     torch.manual_seed(fix_seed)
     np.random.seed(fix_seed)
 
-    if config["use_gpu"]:
-        device = train.torch.get_device()
-    else:
-        device = torch.device("cpu")
+    # Automatically determine device based on availability
+    device = train.torch.get_device()
 
     def _get_processed_outputs_and_targets(raw_outputs, batch_y_on_device, config_inner):
         """
@@ -131,7 +129,7 @@ def train_loop_per_worker(config: dict):
                 for batch in val_ds.iter_torch_batches(batch_size=config["batch_size"], device=device, dtypes=torch.float32):
                     batch_x, batch_y = batch["x"], batch["y"]
 
-                    if config["use_amp"]:
+                    if config["use_amp"] and torch.cuda.is_available():
                         with torch.amp.autocast("cuda"):
                             raw_outputs = model(batch_x)
                     else:
@@ -162,7 +160,7 @@ def train_loop_per_worker(config: dict):
                 torch.save(
                     {
                         "epoch": epoch,
-                        "model_state_dict": model.module.state_dict() if config["use_gpu"] else model.state_dict(),
+                        "model_state_dict": model.module.state_dict() if hasattr(model, "module") else model.state_dict(),
                         "optimizer_state_dict": model_optim.state_dict(),
                         "train_args": config,
                     },
@@ -214,9 +212,6 @@ def parse_args():
     parser.add_argument("--lradj", type=str, default="type1", help="adjust learning rate strategy")
     parser.add_argument("--use_amp", action="store_true", default=False, help="use automatic mixed precision training")
 
-    # GPU / Resources
-    parser.add_argument("--use_gpu", action="store_true", default=False, help="use GPU for training")
-
     # Other args
     parser.add_argument("--fix_seed", type=int, default=2021, help="random seed")
 
@@ -249,16 +244,10 @@ if __name__ == "__main__":
     args = parse_args()
 
     # === Ray Train Setup ===
-    if args.use_gpu:
-        ray.init(num_gpus=args.num_replicas)  # Ensure Ray is initialized with GPU access if needed
-    else:
-        ray.init()
+    ray.init()
 
-    scaling_config = ScalingConfig(
-        num_workers=args.num_replicas,
-        use_gpu=args.use_gpu,
-        # resources_per_worker={"GPU": 1} if args.use_gpu else {}
-    )
+    use_gpu = torch.cuda.is_available()
+    scaling_config = ScalingConfig(num_workers=args.num_replicas, use_gpu=use_gpu, resources_per_worker={"GPU": 1} if use_gpu else None)
 
     # Adjust run name for smoke test
     run_name_prefix = "SmokeTest_" if args.smoke_test else ""
