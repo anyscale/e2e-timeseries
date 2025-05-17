@@ -14,14 +14,15 @@ import ray
 import ray.train.torch
 import torch
 import torch.nn as nn
-from data_provider.data_factory import data_provider
-from models import DLinear
 from ray import train
 from ray.train import Checkpoint, CheckpointConfig, RunConfig, ScalingConfig
 from ray.train.torch import TorchTrainer
 from torch import optim
-from utils.metrics import metric
-from utils.tools import adjust_learning_rate
+
+from .data_provider.data_factory import data_provider
+from .models import DLinear
+from .utils.metrics import metric
+from .utils.tools import adjust_learning_rate
 
 warnings.filterwarnings("ignore")
 
