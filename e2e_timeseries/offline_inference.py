@@ -11,9 +11,9 @@ import torch
 
 os.environ["RAY_TRAIN_V2_ENABLED"] = "1"
 
-from data_provider.data_factory import data_provider
-from models import DLinear
-from utils.metrics import metric
+from e2e_timeseries.data_provider.data_factory import data_provider
+from e2e_timeseries.models import DLinear
+from e2e_timeseries.utils.metrics import metric
 
 
 class Predictor:

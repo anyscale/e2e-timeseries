@@ -12,9 +12,10 @@ import pandas as pd
 import requests
 import torch
 from fastapi import FastAPI
-from models import DLinear
 from ray import serve
 from starlette.requests import Request
+
+from e2e_timeseries.models import DLinear
 
 os.environ["RAY_TRAIN_V2_ENABLED"] = "1"
 

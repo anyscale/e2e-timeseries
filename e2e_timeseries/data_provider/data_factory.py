@@ -1,6 +1,7 @@
 import numpy as np
 import ray
-from data_provider.data_loader import Dataset_ETT_hour
+
+from e2e_timeseries.data_provider.data_loader import Dataset_ETT_hour
 
 
 def data_provider(config: dict, flag: str):
