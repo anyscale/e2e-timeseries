@@ -19,10 +19,10 @@ from ray.train import Checkpoint, CheckpointConfig, RunConfig, ScalingConfig
 from ray.train.torch import TorchTrainer
 from torch import optim
 
-from .data_provider.data_factory import data_provider
-from .models import DLinear
-from .utils.metrics import metric
-from .utils.tools import adjust_learning_rate
+from e2e_timeseries.data_provider.data_factory import data_provider
+from e2e_timeseries.models import DLinear
+from e2e_timeseries.utils.metrics import metric
+from e2e_timeseries.utils.tools import adjust_learning_rate
 
 warnings.filterwarnings("ignore")
 
