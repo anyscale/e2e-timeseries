@@ -29,32 +29,26 @@ warnings.filterwarnings("ignore")
 def train_loop_per_worker(config: dict):
     """Main training loop adapted for Ray Train workers."""
 
-    fix_seed = config["fix_seed"] if "fix_seed" in config else 2021
-    random.seed(fix_seed)
-    torch.manual_seed(fix_seed)
-    np.random.seed(fix_seed)
+    random.seed(config["seed"])
+    torch.manual_seed(config["seed"])
+    np.random.seed(config["seed"])
 
     # Automatically determine device based on availability
     device = train.torch.get_device()
 
-    def _get_processed_outputs_and_targets(raw_outputs, batch_y_on_device, config_inner):
-        """
-        Processes model outputs and batch_y by slicing them to the prediction length
-        and selecting the appropriate features based on the task type.
-        Assumes batch_y_on_device is already on the correct device.
-        """
-        pred_len = config_inner["pred_len"]
-        f_dim_start_index = -1 if config_inner["features"] == "MS" else 0
+    def _postprocess_preds_and_targets(raw_pred, batch_y, config):
+        pred_len = config["pred_len"]
+        f_dim_start_index = -1 if config["features"] == "MS" else 0
 
         # Slice for prediction length first
-        outputs_pred_len = raw_outputs[:, -pred_len:, :]
-        batch_y_pred_len = batch_y_on_device[:, -pred_len:, :]
+        outputs_pred_len = raw_pred[:, -pred_len:, :]
+        batch_y_pred_len = batch_y[:, -pred_len:, :]
 
         # Then slice for features
-        final_outputs = outputs_pred_len[:, :, f_dim_start_index:]
-        final_batch_y_target = batch_y_pred_len[:, :, f_dim_start_index:]
+        final_pred = outputs_pred_len[:, :, f_dim_start_index:]
+        final_target = batch_y_pred_len[:, :, f_dim_start_index:]
 
-        return final_outputs, final_batch_y_target
+        return final_pred, final_target
 
     # === Build Model ===
     model = DLinear.Model(config).float()
@@ -85,19 +79,19 @@ def train_loop_per_worker(config: dict):
         # iter_torch_batches will convert these to Torch tensors and move to device.
         for batch in train_ds.iter_torch_batches(batch_size=config["batch_size"], device=device, dtypes=torch.float32):
             model_optim.zero_grad()
-            batch_x = batch["x"]  # Already a tensor on the correct device
-            batch_y = batch["y"]  # Already a tensor on the correct device
+            x = batch["x"]
+            y = batch["y"]
 
             # Forward pass
             if config["use_amp"]:
                 with torch.amp.autocast("cuda"):
-                    raw_outputs = model(batch_x)
-                    outputs, batch_y_target = _get_processed_outputs_and_targets(raw_outputs, batch_y, config)
-                    loss = criterion(outputs, batch_y_target)
+                    raw_preds = model(x)
+                    predictions, targets = _postprocess_preds_and_targets(raw_preds, y, config)
+                    loss = criterion(predictions, targets)
             else:
-                raw_outputs = model(batch_x)
-                outputs, batch_y_target = _get_processed_outputs_and_targets(raw_outputs, batch_y, config)
-                loss = criterion(outputs, batch_y_target)
+                raw_preds = model(x)
+                predictions, targets = _postprocess_preds_and_targets(raw_preds, y, config)
+                loss = criterion(predictions, targets)
 
             train_loss_epoch.append(loss.item())
 
@@ -127,18 +121,18 @@ def train_loop_per_worker(config: dict):
             all_trues = []
             with torch.no_grad():
                 for batch in val_ds.iter_torch_batches(batch_size=config["batch_size"], device=device, dtypes=torch.float32):
-                    batch_x, batch_y = batch["x"], batch["y"]
+                    x, y = batch["x"], batch["y"]
 
                     if config["use_amp"] and torch.cuda.is_available():
                         with torch.amp.autocast("cuda"):
-                            raw_outputs = model(batch_x)
+                            raw_preds = model(x)
                     else:
-                        raw_outputs = model(batch_x)
+                        raw_preds = model(x)
 
-                    outputs, batch_y_target = _get_processed_outputs_and_targets(raw_outputs, batch_y, config)
+                    predictions, targets = _postprocess_preds_and_targets(raw_preds, y, config)
 
-                    all_preds.append(outputs.detach().cpu().numpy())
-                    all_trues.append(batch_y_target.detach().cpu().numpy())
+                    all_preds.append(predictions.detach().cpu().numpy())
+                    all_trues.append(targets.detach().cpu().numpy())
 
             all_preds = np.concatenate(all_preds, axis=0)
             all_trues = np.concatenate(all_trues, axis=0)
@@ -175,7 +169,6 @@ def train_loop_per_worker(config: dict):
 
 
 if __name__ == "__main__":
-    # Define configuration directly
     config = {
         # basic config
         "train_only": False,
@@ -200,13 +193,13 @@ if __name__ == "__main__":
         "num_replicas": 1,
         "train_epochs": 10,
         "batch_size": 32,
-        "patience": 3,  # Note: early stopping not implemented in this script
+        "patience": 3,  # FIXME: early stopping not implemented in this script
         "learning_rate": 0.005,
         "loss": "mse",
         "lradj": "type1",
         "use_amp": False,
         # Other args
-        "fix_seed": 2021,
+        "seed": 42,
     }
 
     # Set dataset specific args
