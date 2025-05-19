@@ -4,7 +4,6 @@ import tempfile
 # Enable Ray Train V2
 os.environ["RAY_TRAIN_V2_ENABLED"] = "1"
 
-import argparse
 import random
 import time
 import warnings
@@ -175,95 +174,81 @@ def train_loop_per_worker(config: dict):
         adjust_learning_rate(model_optim, epoch + 1, config)
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Ray Train Script for Time Series Forecasting with DLinear on ETTh1")
-
-    # basic config
-    parser.add_argument("--train_only", action="store_true", help="perform training on full input dataset without validation")
-    parser.add_argument("--smoke-test", action="store_true", default=False, help="run a quick smoke test on a small subset of data")
-
-    # data loader args
-    parser.add_argument("--root_path", type=str, default="./e2e_timeseries/dataset/", help="root path of the data file")
-    parser.add_argument("--num_data_workers", type=int, default=10, help="Number of workers for PyTorch DataLoader")
-    parser.add_argument(
-        "--features",
-        type=str,
-        default="S",
-        help="forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate'",
-    )
-    parser.add_argument("--target", type=str, default="OT", help="target feature in S or MS task")
-    parser.add_argument("--checkpoints", type=str, default="./checkpoints/", help="location for Ray Train checkpoints")
-
-    # forecasting task args
-    parser.add_argument("--seq_len", type=int, default=96, help="input sequence length")
-    parser.add_argument("--label_len", type=int, default=48, help="start token length")
-    parser.add_argument("--pred_len", type=int, default=96, help="prediction sequence length")
-
-    # DLinear specific args
-    parser.add_argument("--individual", action="store_true", default=False, help="DLinear: individual layers per channel")
-    # Note: enc_in is set dynamically based on features
-
-    # optimization args
-    parser.add_argument("--num_replicas", type=int, default=1, help="Number of Ray Train model replicas")
-    parser.add_argument("--train_epochs", type=int, default=10, help="train epochs")
-    parser.add_argument("--batch_size", type=int, default=32, help="batch size of train input data")
-    parser.add_argument("--patience", type=int, default=3, help="early stopping patience (Note: requires custom implementation or callback)")
-    parser.add_argument("--learning_rate", type=float, default=0.005, help="optimizer learning rate")
-    parser.add_argument("--loss", type=str, default="mse", help="loss function")
-    parser.add_argument("--lradj", type=str, default="type1", help="adjust learning rate strategy")
-    parser.add_argument("--use_amp", action="store_true", default=False, help="use automatic mixed precision training")
-
-    # Other args
-    parser.add_argument("--fix_seed", type=int, default=2021, help="random seed")
-
-    args = parser.parse_args()
+if __name__ == "__main__":
+    # Define configuration directly
+    config = {
+        # basic config
+        "train_only": False,
+        "smoke_test": False,  # Set to True to run a smoke test
+        # data loader args
+        "root_path": "./e2e_timeseries/dataset/",
+        "num_data_workers": 10,
+        # forecasting task type
+        # S: univariate predict univariate
+        # M: multivariate predict univariate
+        # MS: multivariate predict multivariate
+        "features": "S",
+        "target": "OT",  # target variable name for prediction
+        "checkpoints": "./checkpoints/",
+        # forecasting task args
+        "seq_len": 96,
+        "label_len": 48,
+        "pred_len": 96,
+        # DLinear specific args
+        "individual": False,
+        # optimization args
+        "num_replicas": 1,
+        "train_epochs": 10,
+        "batch_size": 32,
+        "patience": 3,  # Note: early stopping not implemented in this script
+        "learning_rate": 0.005,
+        "loss": "mse",
+        "lradj": "type1",
+        "use_amp": False,
+        # Other args
+        "fix_seed": 2021,
+    }
 
     # Set dataset specific args
-    args.data = "ETTh1"
-    args.data_path = "ETTh1.csv"
-    if args.features == "S":  # S: univariate predict univariate
-        args.enc_in = 1
+    config["data"] = "ETTh1"
+    config["data_path"] = "ETTh1.csv"
+    if config["features"] == "S":  # S: univariate predict univariate
+        config["enc_in"] = 1
     else:  # M or MS
-        args.enc_in = 7  # ETTh1 has 7 features
+        config["enc_in"] = 7  # ETTh1 has 7 features
 
     # Ensure paths are absolute
-    args.root_path = os.path.abspath(args.root_path)
-    args.data_path = os.path.abspath(os.path.join(args.root_path, args.data_path))
-    args.checkpoints = os.path.abspath(args.checkpoints)
+    config["root_path"] = os.path.abspath(config["root_path"])
+    config["data_path"] = os.path.abspath(os.path.join(config["root_path"], config["data_path"]))
+    config["checkpoints"] = os.path.abspath(config["checkpoints"])
 
     # --- Smoke Test Modifications ---
-    if args.smoke_test:
+    if config["smoke_test"]:
         print("--- RUNNING SMOKE TEST ---")
-        args.train_epochs = 2
-        args.batch_size = 2
-        args.num_data_workers = 1
-
-    return args
-
-
-if __name__ == "__main__":
-    args = parse_args()
+        config["train_epochs"] = 2
+        config["batch_size"] = 2
+        config["num_data_workers"] = 1
 
     # === Ray Train Setup ===
     ray.init()
 
     use_gpu = "GPU" in ray.cluster_resources() and ray.cluster_resources()["GPU"] >= 1
     print(f"Using GPU: {use_gpu}")
-    scaling_config = ScalingConfig(num_workers=args.num_replicas, use_gpu=use_gpu, resources_per_worker={"GPU": 1} if use_gpu else None)
+    scaling_config = ScalingConfig(num_workers=config["num_replicas"], use_gpu=use_gpu, resources_per_worker={"GPU": 1} if use_gpu else None)
 
     # Adjust run name for smoke test
-    run_name_prefix = "SmokeTest_" if args.smoke_test else ""
-    run_name = f"{run_name_prefix}DLinear_{args.data}_{args.features}_{args.target}_{time.strftime('%Y%m%d_%H%M%S')}"
+    run_name_prefix = "SmokeTest_" if config["smoke_test"] else ""
+    run_name = f"{run_name_prefix}DLinear_{config['data']}_{config['features']}_{config['target']}_{time.strftime('%Y%m%d_%H%M%S')}"
 
     run_config = RunConfig(
-        storage_path=args.checkpoints,
+        storage_path=config["checkpoints"],
         name=run_name,
         checkpoint_config=CheckpointConfig(num_to_keep=2, checkpoint_score_attribute="val/loss", checkpoint_score_order="min"),
     )
 
     trainer = TorchTrainer(
         train_loop_per_worker=train_loop_per_worker,
-        train_loop_config=vars(args),
+        train_loop_config=config,
         scaling_config=scaling_config,
         run_config=run_config,
     )
@@ -276,7 +261,7 @@ if __name__ == "__main__":
     # === Post-Training ===
     if result.best_checkpoints:
         best_checkpoint_path = None
-        if not args.train_only and "val/loss" in result.metrics_dataframe:
+        if not config["train_only"] and "val/loss" in result.metrics_dataframe:
             best_checkpoint = result.get_best_checkpoint(metric="val/loss", mode="min")
             if best_checkpoint:
                 best_checkpoint_path = best_checkpoint.path
