@@ -25,7 +25,7 @@ We're developing our application on [Anyscale Workspaces](https://docs.anyscale.
 - **Dependencies**: Continue to install dependencies using familiar tools like pip. Anyscale will ensure dependencies are being propagated to your cluster.
 
 ```bash
-pip install -q "torch==2.7.0" "numpy" "scikit-learn" "pandas" "aiohttp" "ipywidgets"
+pip install -q "torch==2.7.0" "numpy" "scikit-learn" "pandas" "aiohttp" "ipywidgets" "pyyaml"
 ```
 
 - **Compute**: Leverage any reserved instance capacity, spot instance from any compute provider of your choice by deploying Anyscale into your account. Alternatively, you can use the Anyscale cloud for a full serverless experience.

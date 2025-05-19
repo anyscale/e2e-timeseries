@@ -5,3 +5,4 @@ scikit-learn
 torch==2.7.0
 # ray[data,train,serve]==2.46.0
 aiohttp
+pyyaml
