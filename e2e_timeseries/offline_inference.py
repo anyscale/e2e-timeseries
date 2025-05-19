@@ -1,7 +1,11 @@
 """
-Offline inference script for DLinear model on ETT dataset using Ray Data.
+# Offline Inference with DLinear and Ray Data
+
+This tutorial demonstrates how to perform batch inference using the DLinear model and Ray Data.
+We load the model checkpoint, prepare the test data, run inference in batches, and evaluate the performance.
 """
 
+# %% [code] - Imports and Environment Setup
 import argparse
 import os
 
@@ -15,7 +19,13 @@ from e2e_timeseries.data_provider.data_factory import data_provider
 from e2e_timeseries.models import DLinear
 from e2e_timeseries.utils.metrics import metric
 
+"""
+The above cell imports the necessary libraries and sets up the environment for Ray Data.
+It also imports the data provider, model, and evaluation metric used in the inference pipeline.
+"""
 
+
+# %% [code] - Predictor Class Definition
 class Predictor:
     """Actor class for performing inference with the DLinear model."""
 
@@ -32,28 +42,31 @@ class Predictor:
 
     def __call__(self, batch: dict[str, np.ndarray]) -> dict:
         """Process a batch of data for inference (numpy batch format)."""
-        # batch['x'] shape: (N, seq_len)
-        # batch['y'] shape: (N, label_len + pred_len)
+        # Convert input batch to tensor
         batch_x = torch.from_numpy(batch["x"]).float().to(self.device)
 
         with torch.no_grad():
             outputs = self.model(batch_x)  # Shape (N, pred_len, features_out)
 
-        # Extract predictions based on model config
+        # Determine feature dimension based on config
         f_dim = -1 if self.config["features"] == "MS" else 0
-        # Shape (N, pred_len, 1) for features='S'
         outputs = outputs[:, -self.config["pred_len"] :, f_dim:]
         outputs_np = outputs.cpu().numpy()
 
-        # Extract the target part from batch['y']
-        # Shape (N, label_len + pred_len)
+        # Extract the target part from the batch
         batch_y = batch["y"]
-        # Shape (N, pred_len)
-        # TODO double check this. shouldnt it be [:, 0:self.config["pred_len"]] instead?
-        # why are we taking the last self.config["pred_len"] elements instead of the first?
         batch_y_target = batch_y[:, -self.config["pred_len"] :]
 
         return {"predictions": outputs_np, "targets": batch_y_target}
+
+
+"""
+This cell defines the Predictor class. It loads the trained DLinear model from a checkpoint and
+processes input batches to produce predictions. The __call__ method is used to perform inference
+on a given batch of numpy arrays.
+"""
+
+# %% [code] - Argument Parsing Setup
 
 
 def parse_args():
@@ -62,33 +75,31 @@ def parse_args():
     # Required arguments
     parser.add_argument("--checkpoint_path", type=str, required=True, help="Path to the model checkpoint file (.pt)")
 
-    # Data loader args (should match the training configuration)
+    # Data loader arguments (should match training configuration)
     parser.add_argument("--root_path", type=str, default="./e2e_timeseries/dataset/", help="Root path of the data file")
     parser.add_argument("--data_path", type=str, default="ETTh1.csv", help="Data file name")
-    parser.add_argument(
-        "--num_data_workers", type=int, default=1, help="Number of workers for PyTorch DataLoader during inference"
-    )  # Usually fewer needed for inference
+    parser.add_argument("--num_data_workers", type=int, default=1, help="Number of workers for PyTorch DataLoader during inference")
     parser.add_argument("--features", type=str, default="S", help="Forecasting task type (M, S, MS)")
     parser.add_argument("--target", type=str, default="OT", help="Target feature in S or MS task")
     parser.add_argument("--smoke_test", action="store_true", default=False, help="Run a smoke test")
 
-    # Model configuration args (must match the trained model)
+    # Model configuration arguments
     parser.add_argument("--seq_len", type=int, default=96, help="Input sequence length")
     parser.add_argument("--label_len", type=int, default=48, help="Start token length (not used by DLinear but part of dataset structure)")
     parser.add_argument("--pred_len", type=int, default=96, help="Prediction sequence length")
     parser.add_argument("--individual", action="store_true", default=False, help="DLinear: individual layers per channel")
     parser.add_argument("--enc_in", type=int, default=1, help="Encoder input size (set based on features)")  # Default for 'S'
 
-    # Inference config
+    # Inference configuration
     parser.add_argument("--batch_size", type=int, default=64, help="Batch size for inference")
     parser.add_argument("--num_predictor_replicas", type=int, default=1, help="Number of Predictor replicas")
 
     args = parser.parse_args()
 
-    # Determine enc_in based on features
+    # Configure encoder input size based on task type
     if args.features == "M" or args.features == "MS":
-        args.enc_in = 7  # ETTh1 has 7 features
-    else:  # 'S'
+        args.enc_in = 7  # ETTh1 has 7 features when multiple features are used
+    else:
         args.enc_in = 1
 
     # Ensure paths are absolute
@@ -104,6 +115,15 @@ def parse_args():
         args.num_gpus_per_worker = 0.0
 
     return vars(args)
+
+
+"""
+This cell parses command-line arguments needed for the inference,
+sets up the model configuration, and converts file paths to absolute paths.
+It also determines if the GPU should be used.
+"""
+
+# %% [code] - Main Inference Pipeline
 
 
 def main():
@@ -125,7 +145,7 @@ def main():
     )
 
     def postprocess_items(item: dict) -> dict:
-        # check if final dim is 1 and squeeze if so
+        # Squeeze singleton dimensions for predictions and targets if necessary
         if item["predictions"].shape[-1] == 1:
             item["predictions"] = item["predictions"].squeeze(-1)
         if item["targets"].shape[-1] == 1:
@@ -134,14 +154,14 @@ def main():
 
     ds = ds.map(postprocess_items)
 
-    # Trigger the lazy execution of the pipeline
+    # Trigger the lazy execution of the Ray pipeline
     all_results = ds.take_all()
 
     # Concatenate predictions and targets from all batches
     all_predictions = np.concatenate([item["predictions"] for item in all_results], axis=0)
     all_targets = np.concatenate([item["targets"] for item in all_results], axis=0)
 
-    # Calculate final metrics on the complete dataset
+    # Compute evaluation metrics
     mae, mse, rmse, mape, mspe, rse = metric(all_predictions, all_targets)
 
     print("\n--- Test Results ---")
@@ -155,5 +175,19 @@ def main():
     print("\nOffline inference finished!")
 
 
+"""
+This cell defines the main function which ties together the entire inference pipeline:
+- It parses configuration parameters
+- Initializes Ray
+- Loads test data using the data provider
+- Applies the Predictor for batch inference
+- Post-processes the results and computes evaluation metrics
+"""
+
+# %% [code] - Execution
 if __name__ == "__main__":
     main()
+
+"""
+This final cell triggers the inference pipeline when the script is executed directly.
+"""
