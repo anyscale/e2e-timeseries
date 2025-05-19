@@ -6,7 +6,6 @@ We load the model checkpoint, prepare the test data, run inference in batches, a
 """
 
 # %% [code] - Imports and Environment Setup
-import argparse
 import os
 
 import numpy as np
@@ -69,52 +68,30 @@ on a given batch of numpy arrays.
 # %% [code] - Argument Parsing Setup
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Offline Inference for DLinear model on ETTh1")
-
-    # Required arguments
-    parser.add_argument("--checkpoint_path", type=str, required=True, help="Path to the model checkpoint file (.pt)")
-
-    # Data loader arguments (should match training configuration)
-    parser.add_argument("--root_path", type=str, default="./e2e_timeseries/dataset/", help="Root path of the data file")
-    parser.add_argument("--data_path", type=str, default="ETTh1.csv", help="Data file name")
-    parser.add_argument("--num_data_workers", type=int, default=1, help="Number of workers for PyTorch DataLoader during inference")
-    parser.add_argument("--features", type=str, default="S", help="Forecasting task type (M, S, MS)")
-    parser.add_argument("--target", type=str, default="OT", help="Target feature in S or MS task")
-    parser.add_argument("--smoke_test", action="store_true", default=False, help="Run a smoke test")
-
-    # Model configuration arguments
-    parser.add_argument("--seq_len", type=int, default=96, help="Input sequence length")
-    parser.add_argument("--label_len", type=int, default=48, help="Start token length (not used by DLinear but part of dataset structure)")
-    parser.add_argument("--pred_len", type=int, default=96, help="Prediction sequence length")
-    parser.add_argument("--individual", action="store_true", default=False, help="DLinear: individual layers per channel")
-    parser.add_argument("--enc_in", type=int, default=1, help="Encoder input size (set based on features)")  # Default for 'S'
-
-    # Inference configuration
-    parser.add_argument("--batch_size", type=int, default=64, help="Batch size for inference")
-    parser.add_argument("--num_predictor_replicas", type=int, default=1, help="Number of Predictor replicas")
-
-    args = parser.parse_args()
-
+def _process_config(config: dict) -> dict:
+    """Helper function to process and update configuration."""
     # Configure encoder input size based on task type
-    if args.features == "M" or args.features == "MS":
-        args.enc_in = 7  # ETTh1 has 7 features when multiple features are used
+    if config["features"] == "M" or config["features"] == "MS":
+        config["enc_in"] = 7  # ETTh1 has 7 features when multiple features are used
     else:
-        args.enc_in = 1
+        config["enc_in"] = 1
 
     # Ensure paths are absolute
-    args.root_path = os.path.abspath(args.root_path)
-    args.data_path = os.path.abspath(os.path.join(args.root_path, args.data_path))
-    args.checkpoint_path = os.path.abspath(args.checkpoint_path)
+    config["root_path"] = os.path.abspath(config["root_path"])
+    config["data_path"] = os.path.abspath(os.path.join(config["root_path"], config["data_path"]))
+    # Ensure checkpoint_path is absolute if it's provided and not None
+    if config.get("checkpoint_path"):
+        config["checkpoint_path"] = os.path.abspath(config["checkpoint_path"])
 
     if torch.cuda.is_available():
         print("CUDA is available, using GPU and setting num_gpus_per_worker to 1.0")
-        args.num_gpus_per_worker = 1.0
+        config["num_gpus_per_worker"] = 1.0
     else:
         print("CUDA is not available, using CPU and setting num_gpus_per_worker to 0.0")
-        args.num_gpus_per_worker = 0.0
+        config["num_gpus_per_worker"] = 0.0
 
-    return vars(args)
+    config["train_only"] = False  # load test subset
+    return config
 
 
 """
@@ -126,10 +103,7 @@ It also determines if the GPU should be used.
 # %% [code] - Main Inference Pipeline
 
 
-def main():
-    config = parse_args()
-    config["train_only"] = False  # load test subset
-
+def main(config: dict):
     ray.init(ignore_reinit_error=True)
 
     print("Loading test data...")
@@ -186,7 +160,28 @@ This cell defines the main function which ties together the entire inference pip
 
 # %% [code] - Execution
 if __name__ == "__main__":
-    main()
+    config = {
+        "checkpoint_path": None,  # FIXME: REQUIRED: Update this path
+        "root_path": "./e2e_timeseries/dataset/",
+        "data_path": "ETTh1.csv",
+        "num_data_workers": 1,
+        "features": "S",
+        "target": "OT",
+        "smoke_test": False,
+        "seq_len": 96,
+        "label_len": 48,
+        "pred_len": 96,
+        "individual": False,
+        "enc_in": 1,  # Will be set by _process_config
+        "batch_size": 64,
+        "num_predictor_replicas": 1,
+        # num_gpus_per_worker will be set by _process_config
+    }
+
+    # Set derived values
+    config = _process_config(config)
+
+    main(config)
 
 """
 This final cell triggers the inference pipeline when the script is executed directly.
