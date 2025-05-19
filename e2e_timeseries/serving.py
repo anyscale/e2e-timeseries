@@ -2,7 +2,6 @@
 Online serving script for DLinear model on ETT dataset using Ray Serve.
 """
 
-import argparse
 import asyncio
 import os
 
@@ -168,9 +167,11 @@ def test_serve():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Serve DLinear model with Ray Serve.")
-    parser.add_argument("--checkpoint_path", type=str, required=True, help="Path to the model checkpoint file (.pt).")
-    args = parser.parse_args()
+    config = {
+        "checkpoint_path": None,  # FIXME: REQUIRED: Update this path
+    }
 
-    serve_model(args.checkpoint_path)
+    checkpoint_path = os.path.abspath(config["checkpoint_path"])
+
+    serve_model(checkpoint_path)
     test_serve()
