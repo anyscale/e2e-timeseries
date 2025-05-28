@@ -6,7 +6,6 @@ from e2e_timeseries.data_provider.data_loader import Dataset_ETT_hour
 
 def data_provider(config: dict, flag: str) -> ray.data.Dataset:
     data_set = Dataset_ETT_hour(
-        root_path=config["root_path"],
         data_path=config["data_path"],
         flag=flag,
         size=[config["seq_len"], config["label_len"], config["pred_len"]],

@@ -1,4 +1,3 @@
-import os
 import warnings
 
 import pandas as pd
@@ -9,9 +8,7 @@ warnings.filterwarnings("ignore")
 
 
 class Dataset_ETT_hour(Dataset):
-    def __init__(
-        self, root_path, flag="train", size=None, features="S", data_path="ETTh1.csv", target="OT", scale=True, train_only=False, smoke_test=False
-    ):
+    def __init__(self, data_path, flag="train", size=None, features="S", target="OT", scale=True, train_only=False, smoke_test=False):
         # sequence_lengths: A list containing [encoder_sequence_length, decoder_context_length, prediction_horizon_length]
         # encoder_sequence_length (seq_len): The length of the input sequence fed to the encoder.
         # decoder_context_length (label_len): The length of the historical sequence segment provided as context to the decoder.
@@ -37,13 +34,12 @@ class Dataset_ETT_hour(Dataset):
         self.train_on_all_data = train_only  # If true, use the entire dataset for training (no validation/test split)
         self.is_smoke_test = smoke_test  # If true, use a small subset of data for quick testing
 
-        self.root_path = root_path
         self.data_file_path = data_path
         self.__read_and_preprocess_data__()
 
     def __read_and_preprocess_data__(self):
         self.scaler = StandardScaler()
-        raw_df = pd.read_csv(os.path.abspath(os.path.join(self.root_path, self.data_file_path)))
+        raw_df = pd.read_csv(self.data_file_path)
 
         # Determine data split boundaries (train, validation, test)
         if self.is_smoke_test:
