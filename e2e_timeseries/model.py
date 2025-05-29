@@ -69,7 +69,7 @@ class series_decomp(nn.Module):
         return res, moving_mean
 
 
-class Model(nn.Module):
+class DLinear(nn.Module):
     """
     Decomposition-Linear (DLinear) model.
     """
