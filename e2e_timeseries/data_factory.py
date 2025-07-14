@@ -1,8 +1,9 @@
 import numpy as np
 import ray
-from data_loader import Dataset_ETT_hour
 
-# make ray data less verbose
+from e2e_timeseries.data_loader import Dataset_ETT_hour
+
+# Make Ray Data less verbose.
 ray.data.DataContext.get_current().enable_progress_bars = False
 ray.data.DataContext.get_current().print_on_execution_start = False
 
@@ -18,15 +19,15 @@ def data_provider(config: dict, flag: str) -> ray.data.Dataset:
     )
     print(f"{flag} subset size: {len(data_set)}")
 
-    # Convert PyTorch Dataset to Ray Dataset
-    # Note: this will print `ArrowConversionError: Error converting data to Arrow` due to
-    # the data having an extra feature dimension. However, Ray will fall-back to using
+    # Convert PyTorch Dataset to Ray Dataset.
+    # Note: This command prints `ArrowConversionError: Error converting data to Arrow` due to
+    # the data having an extra feature dimension. However, Ray falls back to using
     # pickle to store the data and continue without issue.
     ds = ray.data.from_torch(data_set)
 
     def preprocess_items(item: dict) -> dict:
         # ray.data.from_torch wraps items in a dictionary {'item': (tensor_x, tensor_y)}
-        # We want to convert these to numpy arrays and assign to 'x' and 'y' keys.
+        # Convert these to numpy arrays and assign to 'x' and 'y' keys.
         # The tensors from PyTorch Dataset are already on CPU.
         return {"x": np.array(item["item"][0]), "y": np.array(item["item"][1])}
 
